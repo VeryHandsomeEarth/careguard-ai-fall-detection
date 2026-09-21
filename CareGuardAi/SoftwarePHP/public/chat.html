@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ผู้ช่วย AI สุขภาพ | CareGuard AI</title>
+  <link rel="stylesheet" href="css/style.css?v=9.0">
+  <style>
+    .chat-wrap { display:flex; flex-direction:column; }
+    .chat-msgs { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:16px; }
+    .chat-msg { display:flex; gap:12px; max-width:85%; }
+    .chat-msg.user { align-self:flex-end; flex-direction:row-reverse; }
+    .chat-msg.assistant { align-self:flex-start; }
+    .chat-avatar { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(0, 210, 255, 0.15); border:1px solid var(--accent); font-size:18px; flex-shrink:0; }
+    .chat-bubble { background:var(--bg-secondary); border:1px solid var(--border); padding:12px 16px; border-radius:12px; font-size:14px; line-height:1.6; color:var(--text-primary); }
+    .chat-msg.user .chat-bubble { background:var(--accent); color:#000; font-weight:500; border:none; }
+    .chat-input-row { display:flex; gap:10px; margin-top:14px; }
+    .chat-input { flex:1; background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; padding:12px 16px; color:var(--text-primary); font-family:inherit; font-size:14px; outline:none; }
+    .chat-input:focus { border-color:var(--accent); box-shadow:0 0 10px var(--accent-glow); }
+    .chat-send { background:var(--accent); color:#000; border:none; border-radius:8px; padding:0 20px; font-weight:700; cursor:pointer; font-size:16px; transition:all 0.2s; }
+    .chat-send:hover { background:var(--accent-hover); transform:translateY(-1px); }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html" class="nav-brand"><span>⚡</span> CareGuard <span>AI</span></a>
+  <a href="index.html"   class="nav-link">🏠 หน้าหลัก</a>
+  <a href="health.html"  class="nav-link">❤️ สุขภาพ & ก้าวเดิน</a>
+  <a href="graphs.html"  class="nav-link">📊 กราฟเซ็นเซอร์</a>
+  <a href="report.html"  class="nav-link">📋 รายงานประวัติ</a>
+  <a href="chat.html"    class="nav-link active">🤖 ผู้ช่วย AI</a>
+  <a href="admin.html"   class="nav-link nav-admin-link" id="navAdminLink" style="display:none;color:#fbbf24;font-weight:600;">👑 ผู้ดูแลระบบ</a>
+  <span class="nav-spacer"></span>
+  <span class="status-badge">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">กำลังเชื่อมต่อ...</span>
+  </span>
+
+  <!-- Avatar Profile Dropdown -->
+  <div class="nav-profile-dropdown" id="navProfileDropdown">
+    <button class="nav-profile-btn" onclick="toggleProfileDropdown(event)" id="navProfileBtn">
+      <span class="nav-avatar" id="navAvatar">👤</span>
+      <span class="nav-username" id="navUsername">ผู้ใช้งาน</span>
+      <span class="nav-dropdown-caret">▼</span>
+    </button>
+    <div class="dropdown-menu" id="profileDropdownMenu" style="display:none;">
+      <div class="dropdown-header">
+        <div class="dropdown-user-avatar" id="menuAvatar">👤</div>
+        <div class="dropdown-user-info">
+          <div class="dropdown-user-name" id="menuUsername">ผู้ใช้งาน</div>
+          <div class="dropdown-user-role" id="menuUserRole">ผู้ใช้งาน</div>
+        </div>
+      </div>
+      <div class="dropdown-divider"></div>
+      <a href="admin.html" class="dropdown-item menu-admin-link" id="menuAdminLink" style="display:none;color:#fbbf24;font-weight:600;">
+        <span>👑</span> แผงควบคุมระบบ (Admin)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openProfileModal()">
+        <span>👤</span> ข้อมูลโปรไฟล์ & ติดต่อฉุกเฉิน
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openDevicesModal()">
+        <span>⚙️</span> จัดการอุปกรณ์ (MAC Address)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openThemeModal()">
+        <span>🎨</span> ธีม & การแสดงผล
+      </a>
+      <div class="dropdown-divider"></div>
+      <a href="login.html?logout=1" class="dropdown-item dropdown-item-danger">
+        <span>🚪</span> ออกจากระบบ
+      </a>
+    </div>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header">
+    <div>
+      <h1>🤖 ผู้ช่วยอัจฉริยะวิเคราะห์สุขภาพ (AI Health Advisor)</h1>
+      <p style="color:var(--text-secondary);font-size:13.5px;margin-top:3px;">สอบถามคำแนะนำการดูแลสุขภาพ, การวิเคราะห์ความเสี่ยงการล้ม และการตั้งเป้าหมายกิจกรรม</p>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="clearChat()">🗑️ ล้างการสนทนา</button>
+  </div>
+
+  <div class="grid-2" style="grid-template-columns: 1fr 320px; align-items:start;">
+    <!-- Chat Area -->
+    <div class="card">
+      <div class="chat-wrap" style="height:540px;">
+        <div class="chat-msgs" id="chatMsgs">
+          <div class="chat-msg assistant">
+            <div class="chat-avatar">🤖</div>
+            <div class="chat-bubble">
+              สวัสดีครับ! ผมเป็น <strong>AI Health Advisor</strong> ประจำระบบ CareGuard AI<br>
+              ผมสามารถช่วยวิเคราะห์ข้อมูลสุขภาพ ก้าวเดิน ประวัติการล้ม หรือให้คำแนะนำการออกกำลังกายที่ปลอดภัยได้ครับ ลองถามคำถามด้านล่างนี้ได้เลยครับ:
+            </div>
+          </div>
+        </div>
+
+        <!-- Suggestions -->
+        <div id="suggestions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;padding:0 4px;">
+          <button class="btn btn-outline btn-sm" onclick="quickAsk('วิเคราะห์สถิติสุขภาพและก้าวเดินของฉันหน่อย')">📊 วิเคราะห์สุขภาพ</button>
+          <button class="btn btn-outline btn-sm" onclick="quickAsk('ช่วยแนะนำวิธีป้องกันการล้มสำหรับผู้ใช้งาน')">🛡️ วิธีป้องกันการล้ม</button>
+          <button class="btn btn-outline btn-sm" onclick="quickAsk('ควรตั้งเป้าหมายการเดินวันละกี่ก้าว')">🎯 ตั้งเป้าหมายก้าวเดิน</button>
+          <button class="btn btn-outline btn-sm" onclick="quickAsk('แนะนำท่าบริหารเพื่อเพิ่มความแข็งแรงและการทรงตัว')">💪 ท่าบริหารการทรงตัว</button>
+        </div>
+
+        <!-- Input Row -->
+        <div class="chat-input-row">
+          <input class="chat-input" id="chatInput" type="text" placeholder="พิมพ์ข้อความถาม AI เกี่ยวกับสุขภาพหรือการล้ม..." onkeydown="if(event.key==='Enter')sendMsg()">
+          <button class="chat-send" onclick="sendMsg()">ส่ง ➤</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- User Profile Sidebar -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">👤 ข้อมูลผู้ใช้</span>
+          <a href="javascript:void(0)" onclick="openSettingsProfile(event)" class="card-action">แก้ไข →</a>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px;">
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:var(--text-secondary)">ชื่อ:</span>
+            <strong id="sName" style="color:var(--accent)">--</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:var(--text-secondary)">อายุ:</span>
+            <span id="sAge">--</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:var(--text-secondary)">น้ำหนัก / ส่วนสูง:</span>
+            <span><span id="sWeight">--</span> กก. / <span id="sHeight">--</span> ซม.</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:var(--text-secondary)">BMI:</span>
+            <strong id="sBMI" style="color:var(--success)">--</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:var(--text-secondary)">โรคประจำตัว:</span>
+            <span id="sCond" style="color:var(--warning)">--</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🎯 เป้าหมายประจำวัน</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:13.5px;">
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:var(--text-secondary)">เป้าหมายก้าวเดิน:</span>
+            <strong id="sStepGoal" style="color:var(--accent)">10,000 ก้าว</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:var(--text-secondary)">เป้าหมายระยะทาง:</span>
+            <strong id="sDistGoal" style="color:var(--accent2)">5,000 ม.</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="js/shared.js?v=9.0"></script>
+<script>
+async function loadChatProfile() {
+  try {
+    const res = await fetch(BASE + '/api/profile');
+    const d = await res.json();
+    if (d.success && d.data) {
+      const p = d.data;
+      document.getElementById('sName').textContent = p.name || 'ผู้ใช้ทั่วไป';
+      document.getElementById('sAge').textContent = p.age ? `${p.age} ปี` : '--';
+      document.getElementById('sWeight').textContent = p.weight || '--';
+      document.getElementById('sHeight').textContent = p.height || '--';
+      if (p.weight && p.height) {
+        const hm = p.height / 100;
+        document.getElementById('sBMI').textContent = (p.weight / (hm * hm)).toFixed(1);
+      }
+      document.getElementById('sCond').textContent = p.health_conditions || 'ไม่มี';
+      if (p.step_goal) document.getElementById('sStepGoal').textContent = fmtNum(p.step_goal) + ' ก้าว';
+      if (p.distance_goal) document.getElementById('sDistGoal').textContent = fmtNum(p.distance_goal) + ' ม.';
+    }
+  } catch {}
+}
+
+function quickAsk(text) {
+  document.getElementById('chatInput').value = text;
+  sendMsg();
+}
+
+async function sendMsg() {
+  const input = document.getElementById('chatInput');
+  const text = (input.value || '').trim();
+  if (!text) return;
+
+  input.value = '';
+  const chatMsgs = document.getElementById('chatMsgs');
+
+  // Add User Message
+  const userDiv = document.createElement('div');
+  userDiv.className = 'chat-msg user';
+  userDiv.innerHTML = `<div class="chat-bubble">${escapeHtml(text)}</div>`;
+  chatMsgs.appendChild(userDiv);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+
+  // Add Assistant Typing
+  const botDiv = document.createElement('div');
+  botDiv.className = 'chat-msg assistant';
+  botDiv.innerHTML = `<div class="chat-avatar">🤖</div><div class="chat-bubble"><em>กำลังวิเคราะห์ข้อมูล...</em></div>`;
+  chatMsgs.appendChild(botDiv);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+
+  try {
+    const res = await fetch(BASE + '/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text })
+    });
+    const data = await res.json();
+    if (data.success && data.reply) {
+      botDiv.querySelector('.chat-bubble').innerHTML = data.reply.replace(/\n/g, '<br>');
+    } else {
+      botDiv.querySelector('.chat-bubble').textContent = data.error || 'ไม่สามารถติดต่อ AI ได้';
+    }
+  } catch (e) {
+    botDiv.querySelector('.chat-bubble').textContent = 'เกิดข้อผิดพลาดในการเชื่อมต่อ';
+  }
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+function clearChat() {
+  const chatMsgs = document.getElementById('chatMsgs');
+  chatMsgs.innerHTML = `
+    <div class="chat-msg assistant">
+      <div class="chat-avatar">🤖</div>
+      <div class="chat-bubble">ล้างประวัติการสนทนาเรียบร้อยแล้วครับ ถามคำถามใหม่ได้ทันที!</div>
+    </div>
+  `;
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+loadChatProfile();
+</script>
+</body>
+</html>

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>รายงานประวัติการล้ม | CareGuard AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=9.0">
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html" class="nav-brand"><span>⚡</span> CareGuard <span>AI</span></a>
+  <a href="index.html"   class="nav-link">🏠 หน้าหลัก</a>
+  <a href="health.html"  class="nav-link">❤️ สุขภาพ & ก้าวเดิน</a>
+  <a href="graphs.html"  class="nav-link">📊 กราฟเซ็นเซอร์</a>
+  <a href="report.html"  class="nav-link active">📋 รายงานประวัติ</a>
+  <a href="admin.html"   class="nav-link nav-admin-link" id="navAdminLink" style="display:none;color:#fbbf24;font-weight:600;">👑 ผู้ดูแลระบบ</a>
+  <span class="nav-spacer"></span>
+  <span class="status-badge">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">กำลังเชื่อมต่อ...</span>
+  </span>
+
+  <!-- Avatar Profile Dropdown -->
+  <div class="nav-profile-dropdown" id="navProfileDropdown">
+    <button class="nav-profile-btn" onclick="toggleProfileDropdown(event)" id="navProfileBtn">
+      <span class="nav-avatar" id="navAvatar">👤</span>
+      <span class="nav-username" id="navUsername">ผู้ใช้งาน</span>
+      <span class="nav-dropdown-caret">▼</span>
+    </button>
+    <div class="dropdown-menu" id="profileDropdownMenu" style="display:none;">
+      <div class="dropdown-header">
+        <div class="dropdown-user-avatar" id="menuAvatar">👤</div>
+        <div class="dropdown-user-info">
+          <div class="dropdown-user-name" id="menuUsername">ผู้ใช้งาน</div>
+          <div class="dropdown-user-role" id="menuUserRole">ผู้ใช้งาน</div>
+        </div>
+      </div>
+      <div class="dropdown-divider"></div>
+      <a href="admin.html" class="dropdown-item menu-admin-link" id="menuAdminLink" style="display:none;color:#fbbf24;font-weight:600;">
+        <span>👑</span> แผงควบคุมระบบ (Admin)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openProfileModal()">
+        <span>👤</span> ข้อมูลโปรไฟล์ & ติดต่อฉุกเฉิน
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openDevicesModal()">
+        <span>⚙️</span> จัดการอุปกรณ์ (MAC Address)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openThemeModal()">
+        <span>🎨</span> ธีม & การแสดงผล
+      </a>
+      <div class="dropdown-divider"></div>
+      <a href="login.html?logout=1" class="dropdown-item dropdown-item-danger">
+        <span>🚪</span> ออกจากระบบ
+      </a>
+    </div>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header">
+    <div>
+      <h1>📋 บันทึกประวัติเหตุการณ์การล้ม (Fall Incident Log)</h1>
+      <p style="color:var(--text-secondary);font-size:13.5px;margin-top:3px;">รายงานการตรวจจับการล้ม, การระบุทิศทาง, สถานะการกดยืนยันปุ่ม D18 และการส่งข้อมูลออฟไลน์</p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="window.print()">🖨️ พิมพ์รายงาน</button>
+      <button class="btn btn-primary" onclick="exportCSV()">⬇️ Export CSV</button>
+    </div>
+  </div>
+
+  <!-- Filters Row (Responsive) -->
+  <div class="card" style="margin-bottom:20px;padding:16px 20px;">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:180px;">
+        <label class="form-label" style="margin-bottom:0;">📅 เลือกวันที่ (เว้นว่างเพื่อดูทั้งหมด)</label>
+        <input type="date" id="filterDate" class="form-input" style="padding:7px 12px;width:100%;" onchange="loadReport()">
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px;">
+        <label class="form-label" style="margin-bottom:0;">🎯 ประเภท/ทิศทางการล้ม</label>
+        <select id="filterType" class="form-select" style="padding:7px 12px;width:100%;" onchange="loadReport()">
+          <option value="">-- ทั้งหมด --</option>
+          <option value="fall_forward">ล้มไปข้างหน้า (Forward)</option>
+          <option value="fall_backward">ล้มไปข้างหลัง (Backward)</option>
+          <option value="fall_lateral_left">ล้มไปด้านซ้าย (Lateral Left)</option>
+          <option value="fall_lateral_right">ล้มไปด้านขวา (Lateral Right)</option>
+          <option value="fall_vertical">ล้มแนวดิ่ง/ทรุดตัว (Vertical)</option>
+        </select>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:180px;">
+        <label class="form-label" style="margin-bottom:0;">🛡️ สถานะการช่วยเหลือ</label>
+        <select id="filterAssisted" class="form-select" style="padding:7px 12px;width:100%;" onchange="loadReport()">
+          <option value="">-- ทั้งหมด --</option>
+          <option value="1">ได้รับการช่วยเหลือแล้ว (Assisted)</option>
+          <option value="0">รอการช่วยเหลือ (Pending)</option>
+        </select>
+      </div>
+
+      <button class="btn btn-outline btn-sm" style="height:38px;padding:0 16px;white-space:nowrap;" onclick="resetFilters()">ล้างตัวกรอง</button>
+    </div>
+  </div>
+
+  <!-- Incident Table -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">🚨 ตารางรายการเหตุการณ์การล้ม</span>
+      <span id="totalBadge" class="pill pill-blue">ทั้งหมด 0 รายการ</span>
+    </div>
+    <div class="table-wrap">
+      <table id="reportTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>วัน-เวลา</th>
+            <th>ประเภท/ทิศทางการล้ม</th>
+            <th>ความมั่นใจ AI</th>
+            <th>ความรุนแรง</th>
+            <th>แรงกระแทก (Ax, Ay, Az)</th>
+            <th>พิกัด GPS</th>
+            <th>การช่วยเหลือ (ปุ่ม D18/Web)</th>
+            <th>สถานะส่ง</th>
+          </tr>
+        </thead>
+        <tbody id="reportBody">
+          <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px;">กำลังโหลด...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+      <button class="btn btn-outline btn-sm" id="btnPrev" onclick="changePage(-1)">← หน้าก่อนหน้า</button>
+      <span id="pageLabel" style="font-size:13px;color:var(--text-secondary);">หน้า 1 / 1</span>
+      <button class="btn btn-outline btn-sm" id="btnNext" onclick="changePage(1)">หน้าถัดไป →</button>
+    </div>
+  </div>
+</main>
+
+<script src="js/shared.js?v=9.0"></script>
+<script>
+let currentPage = 1;
+let totalPages = 1;
+let currentFalls = [];
+
+async function loadReport() {
+  const date = document.getElementById('filterDate').value;
+  const type = document.getElementById('filterType').value;
+  const assisted = document.getElementById('filterAssisted').value;
+
+  let url = `${BASE}/api/falls?limit=50&page=${currentPage}`;
+  if (date) url += `&date=${date}`;
+  if (type) url += `&fall_type=${type}`;
+  if (assisted !== '') url += `&assisted=${assisted}`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data && data.success && data.data) {
+      currentFalls = data.data || [];
+      const totalCount = data.total !== undefined ? data.total : currentFalls.length;
+      totalPages = Math.max(1, Math.ceil(totalCount / 50));
+      document.getElementById('totalBadge').textContent = `ทั้งหมด ${totalCount} รายการ`;
+      document.getElementById('pageLabel').textContent = `หน้า ${currentPage} / ${totalPages}`;
+      renderTable(currentFalls);
+      setConnected(true);
+    }
+  } catch (e) {
+    console.error('Load report error:', e);
+    setConnected(false);
+  }
+}
+
+function renderTable(falls) {
+  const tbody = document.getElementById('reportBody');
+  if (!tbody) return;
+  if (!falls || falls.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">ไม่พบรายการเหตุการณ์ตามตัวกรองที่เลือก</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = falls.map((f, i) => {
+    try {
+      let d = { type: 'fall_forward', name: 'ล้มไปข้างหน้า', icon: '🏃‍♂️' };
+      if (typeof deduceFallDirection === 'function') {
+        d = deduceFallDirection(f);
+      }
+      const timeStr = typeof formatDateTime === 'function' ? formatDateTime(f.timestamp) : (f.timestamp || '--');
+      const loc = (f.lat && f.lng) ? `<a href="https://maps.google.com/?q=${f.lat},${f.lng}" target="_blank" style="color:var(--accent);text-decoration:none;">📍 ${parseFloat(f.lat).toFixed(4)}, ${parseFloat(f.lng).toFixed(4)}</a>` : '<span style="color:var(--text-muted);">--</span>';
+      // คำนวณค่าแรงกระแทก G และแสดงแกน Ax, Ay, Az โดยตรงจากฐานข้อมูล
+      const rawX = parseFloat(f.acceleration_x);
+      const rawY = parseFloat(f.acceleration_y);
+      const rawZ = parseFloat(f.acceleration_z);
+      const ax = !isNaN(rawX) ? rawX : 0;
+      const ay = !isNaN(rawY) ? rawY : 0;
+      const az = !isNaN(rawZ) ? rawZ : 0;
+      const mag = Math.sqrt(ax * ax + ay * ay + az * az);
+      const gTotal = mag > 0 ? (mag / 9.80665) : 0;
+
+      let acc = '<span style="color:var(--text-muted);font-size:11px;">--</span>';
+      if (mag > 0.1) {
+        acc = `<span class="pill pill-red" style="font-weight:700;font-size:11.5px;padding:3px 8px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">💥 ${gTotal.toFixed(2)} G</span> <span style="color:var(--text-muted);font-size:11px;font-family:var(--font-mono);white-space:nowrap;margin-left:4px;">(${ax.toFixed(1)}, ${ay.toFixed(1)}, ${az.toFixed(1)})</span>`;
+      }
+      const conf = f.confidence ? `${Math.round(f.confidence * 100)}%` : '--';
+      const offline = typeof getOfflineBadge === 'function' ? (getOfflineBadge(f.offline_recorded) || '<span style="color:var(--text-muted);font-size:11px;">Real-time</span>') : '<span style="color:var(--text-muted);font-size:11px;">Real-time</span>';
+      const badgeHtml = typeof getFallTypeBadge === 'function' ? getFallTypeBadge(null, null, f) : `${d.icon} ${d.name}`;
+      const assistHtml = typeof getAssistedBadge === 'function' ? getAssistedBadge(f.assisted, f.assisted_at, f.id) : '';
+
+      return `
+        <tr>
+          <td><strong>#${f.id}</strong></td>
+          <td>${timeStr}</td>
+          <td>${badgeHtml}</td>
+          <td><span class="pill pill-blue">${conf}</span></td>
+          <td><span class="pill ${f.severity === 'high' ? 'pill-red' : (f.severity === 'medium' ? 'pill-yellow' : 'pill-green')}">${(f.severity || 'medium').toUpperCase()}</span></td>
+          <td style="font-family:var(--font-mono);font-size:12px;">${acc}</td>
+          <td>${loc}</td>
+          <td>${assistHtml}</td>
+          <td>${offline}</td>
+        </tr>
+      `;
+    } catch (err) {
+      console.error('Row render error:', err);
+      return `<tr><td colspan="9">#${f.id} - ${f.fall_type_name || 'การล้ม'}</td></tr>`;
+    }
+  }).join('');
+}
+
+function changePage(delta) {
+  currentPage = Math.max(1, Math.min(totalPages, currentPage + delta));
+  loadReport();
+}
+
+function resetFilters() {
+  document.getElementById('filterDate').value = '';
+  document.getElementById('filterType').value = '';
+  document.getElementById('filterAssisted').value = '';
+  currentPage = 1;
+  loadReport();
+}
+
+function exportCSV() {
+  if (!currentFalls || currentFalls.length === 0) {
+    alert('ไม่มีข้อมูลสำหรับส่งออก');
+    return;
+  }
+
+  let csv = '\uFEFFID,วันที่เวลา,ประเภทการล้ม,ความมั่นใจ,ความรุนแรง,Ax,Ay,Az,Lat,Lng,ได้รับการช่วยเหลือ,โหมดออฟไลน์\n';
+  currentFalls.forEach(f => {
+    const d = typeof deduceFallDirection === 'function' ? deduceFallDirection(f) : { name: f.fall_type_name || 'การล้ม' };
+    csv += `"${f.id}","${f.timestamp}","${d.name}","${f.confidence || ''}","${f.severity}","${f.acceleration_x}","${f.acceleration_y}","${f.acceleration_z}","${f.lat || ''}","${f.lng || ''}","${f.assisted ? 'ใช่' : 'ไม่ใช่'}","${f.offline_recorded ? 'ใช่' : 'ไม่ใช่'}"\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `fall_incidents_${new Date().toISOString().split('T')[0]}.csv`;
+  link.click();
+}
+
+loadReport();
+</script>
+</body>
+</html>

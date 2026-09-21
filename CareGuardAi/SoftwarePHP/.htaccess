@@ -1,0 +1,27 @@
+RewriteEngine On
+RewriteBase /IMU/SoftwarePHP/
+
+# Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# ไม่ rewrite ถ้าเป็นไฟล์หรือโฟลเดอร์จริง
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# ส่งทุก request ไปที่ index.php
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# ป้องกันการเข้าถึงไฟล์ sensitive
+<Files ".env">
+  Order allow,deny
+  Deny from all
+</Files>
+<Files "api_key_init.txt">
+  Order allow,deny
+  Deny from all
+</Files>
+<Files "*.log">
+  Order allow,deny
+  Deny from all
+</Files>

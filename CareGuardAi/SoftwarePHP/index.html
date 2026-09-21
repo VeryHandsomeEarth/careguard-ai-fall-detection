@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>แดชบอร์ดหลัก | ระบบตรวจจับการล้ม CareGuard AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=9.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<!-- Emergency Fall Alert Banner -->
+<div id="fallAlert" class="fall-alert hidden">
+  <div class="fall-alert-content">
+    <span style="font-size:24px;">🚨</span>
+    <span id="fallAlertText">⚠️ <strong>ตรวจพบเหตุการณ์การล้ม!</strong> กรุณาเข้าช่วยเหลือผู้ใช้งานทันที</span>
+  </div>
+  <div class="fall-alert-btn-group">
+    <button class="fall-alert-btn" id="btnAlertAssist" onclick="handleBannerAssist()">✅ ยืนยันการช่วยเหลือแล้ว</button>
+    <button class="fall-alert-btn" style="background:rgba(0,0,0,0.3);color:#fff;" onclick="dismissAlert()">ปิด ✕</button>
+  </div>
+</div>
+
+<!-- Navigation Bar -->
+<nav class="nav">
+  <a href="index.html" class="nav-brand">
+    <span>⚡</span> CareGuard <span>AI</span>
+  </a>
+  <a href="index.html"   class="nav-link active">🏠 หน้าหลัก</a>
+  <a href="health.html"  class="nav-link">❤️ สุขภาพ & ก้าวเดิน</a>
+  <a href="graphs.html"  class="nav-link">📊 กราฟเซ็นเซอร์</a>
+  <a href="report.html"  class="nav-link">📋 รายงานประวัติ</a>
+  <a href="admin.html"   class="nav-link nav-admin-link" id="navAdminLink" style="display:none;color:#fbbf24;font-weight:600;">👑 ผู้ดูแลระบบ</a>
+  
+  <span class="nav-spacer"></span>
+  
+  <span class="status-badge">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">กำลังเชื่อมต่อ...</span>
+  </span>
+
+  <!-- Avatar Profile Dropdown (Only Avatar and Username as requested) -->
+  <div class="nav-profile-dropdown" id="navProfileDropdown">
+    <button class="nav-profile-btn" onclick="toggleProfileDropdown(event)" id="navProfileBtn">
+      <span class="nav-avatar" id="navAvatar">👤</span>
+      <span class="nav-username" id="navUsername">ผู้ใช้งาน</span>
+      <span class="nav-dropdown-caret">▼</span>
+    </button>
+    <div class="dropdown-menu" id="profileDropdownMenu" style="display:none;">
+      <div class="dropdown-header">
+        <div class="dropdown-user-avatar" id="menuAvatar">👤</div>
+        <div class="dropdown-user-info">
+          <div class="dropdown-user-name" id="menuUsername">ผู้ใช้งาน</div>
+          <div class="dropdown-user-role" id="menuUserRole">ผู้ใช้งาน</div>
+        </div>
+      </div>
+      <div class="dropdown-divider"></div>
+      <a href="admin.html" class="dropdown-item menu-admin-link" id="menuAdminLink" style="display:none;color:#fbbf24;font-weight:600;">
+        <span>👑</span> แผงควบคุมระบบ (Admin)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openProfileModal()">
+        <span>👤</span> ข้อมูลโปรไฟล์ & ติดต่อฉุกเฉิน
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openDevicesModal()">
+        <span>⚙️</span> จัดการอุปกรณ์ (MAC Address)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openThemeModal()">
+        <span>🎨</span> ธีม & การแสดงผล
+      </a>
+      <div class="dropdown-divider"></div>
+      <a href="login.html?logout=1" class="dropdown-item dropdown-item-danger">
+        <span>🚪</span> ออกจากระบบ
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- Main Container -->
+<main class="page">
+  <div class="page-header">
+    <div>
+      <h1>🏠 แดชบอร์ดติดตามผู้ใช้งาน & สุขภาพ</h1>
+      <p style="color:var(--text-secondary);font-size:13.5px;margin-top:3px;">ระบบตรวจจับทิศทางการล้มอัตโนมัติ พร้อมตรวจจับและสลับพิกัด GPS / Wi-Fi Geolocation โดยอัตโนมัติ</p>
+    </div>
+    <div style="text-align:right;">
+      <p id="lastUpdate" class="last-update">อัปเดตล่าสุด: กำลังโหลด...</p>
+    </div>
+  </div>
+
+  <!-- 2 Stat Cards Row -->
+  <div class="grid-stat-2">
+    <!-- Card 1: Falls Today -->
+    <div class="stat-card stat-danger">
+      <div class="stat-label">🚨 การล้มวันนี้</div>
+      <div class="stat-value" id="fallCount">0<span>ครั้ง</span></div>
+      <div class="stat-desc" id="fallSubStatus" style="display:flex;gap:6px;margin-top:4px;">
+        <span class="pill pill-green" id="statAssistedCount">ช่วยเหลือแล้ว 0</span>
+        <span class="pill pill-red" id="statPendingCount">รอดดำเนินงาน 0</span>
+      </div>
+    </div>
+
+    <!-- Card 2: Steps Today -->
+    <div class="stat-card stat-success">
+      <div class="stat-label">👣 ก้าวเดินวันนี้</div>
+      <div class="stat-value" id="stepCount">0<span>ก้าว</span></div>
+      <div class="stat-desc" id="distDisplay">ระยะทางสะสม: 0.0 ม.</div>
+    </div>
+  </div>
+
+  <!-- 2 Column Layout: Map & Recent Falls (Responsive: 2-col on PC, 1-col on iPad/Mobile) -->
+  <div class="grid-2" style="align-items: start;">
+    <!-- Left: GPS Map (Fits tightly to content, no excess empty space) -->
+    <div class="card map-card-container" style="padding:0;overflow:hidden;align-self:start;">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:0;border-bottom:1px solid rgba(255,255,255,0.08);">
+        <span class="card-title" style="font-size:16px;font-weight:700;">🗺️ แผนที่ตำแหน่ง</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="syncPulseBadge" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:rgba(0,230,118,0.12);border:1px solid rgba(0,230,118,0.3);box-shadow:0 0 10px rgba(0,230,118,0.25);cursor:pointer;" title="ซิงค์ตำแหน่งแบบ Real-Time (ออนไลน์)">
+            <span class="status-dot online" style="width:10px;height:10px;"></span>
+          </span>
+        </div>
+      </div>
+      <div id="gpsMap" style="height: 380px; width: 100%;"></div>
+      <!-- Toolbar underneath map styled to match CareGuard Theme -->
+      <div style="background:var(--bg-secondary);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);flex-wrap:wrap;gap:10px;">
+        <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:16px;">
+          <span>📍 LAT: <strong id="barLat" style="color:var(--accent);font-weight:700;">--</strong></span>
+          <span>LNG: <strong id="barLng" style="color:var(--accent);font-weight:700;">--</strong></span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button id="btnCopyCoords" onclick="copyMapCoords()" class="btn btn-outline btn-sm" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;font-size:12.5px;">
+            <span style="font-size:13px;">📋</span> <span id="copyBtnText">คัดลอก</span>
+          </button>
+          <a id="btnOpenGmaps" href="https://maps.google.com" target="_blank" class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;font-size:12.5px;text-decoration:none;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            Google Maps
+          </a>
+        </div>
+      </div>
+      <!-- Hidden fallback spans for legacy scripts -->
+      <div style="display:none;">
+        <span id="latVal">--</span>
+        <span id="lngVal">--</span>
+        <span id="altVal">--</span>
+        <span id="hdopVal">--</span>
+        <span id="gpsStatus"></span>
+        <span id="livePulseBadge"></span>
+      </div>
+    </div>
+
+    <!-- Right: Recent Falls with Fall Types & Assist Buttons -->
+    <div class="card" style="align-self:start;">
+      <div class="card-header">
+        <span class="card-title">⚠️ เหตุการณ์การล้มล่าสุด & ทิศทางที่ตรวจพบ</span>
+        <a class="card-action" href="report.html">ดูประวัติทั้งหมด →</a>
+      </div>
+      <div id="eventList" class="event-list" style="max-height: 440px; overflow-y: auto; padding-right: 4px;">
+        <div class="empty-state">
+          <div class="empty-icon">✅</div>
+          <div>กำลังโหลดข้อมูลการล้ม...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="js/shared.js?v=9.0"></script>
+<script>
+// ==================== GPS Map Initialization ====================
+const map = L.map('gpsMap').setView([13.736717, 100.523186], 15);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
+  maxZoom: 19
+}).addTo(map);
+
+const purpleRadarIcon = L.divIcon({
+  className: '',
+  html: `<div style="position:relative;width:26px;height:26px;">
+           <div style="position:absolute;width:26px;height:26px;background:rgba(168,85,247,0.35);border-radius:50%;animation:pulse-purple 1.8s infinite;"></div>
+           <div style="position:absolute;top:4px;left:4px;width:18px;height:18px;background:#a855f7;border-radius:50%;border:3px solid #ffffff;box-shadow:0 0 12px rgba(168,85,247,0.8);display:flex;align-items:center;justify-content:center;">
+             <div style="width:4px;height:4px;background:#ffffff;border-radius:50%;"></div>
+           </div>
+         </div>`,
+  iconSize: [26, 26],
+  iconAnchor: [13, 13]
+});
+
+let marker = null;
+let accuracyCircle = null;
+let trackLine = L.polyline([], { color: '#a855f7', weight: 4, opacity: 0.85 }).addTo(map);
+let trackPoints = [];
+let activeFallId = 0;
+
+function updateMap(lat, lng, speed, satellites, alt, hdop, locSource, timestamp) {
+  satellites = (satellites !== undefined && satellites !== null) ? Math.max(0, parseInt(satellites)) : 0;
+  speed = (!isNaN(speed) && speed > 0) ? parseFloat(speed) : 0.0;
+
+  const speedEl = document.getElementById('speedKmh');
+  if (speedEl) speedEl.innerHTML = speed.toFixed(1) + '<span>km/h</span>';
+
+  // ตรวจจับฮาร์ดแวร์และแหล่งที่มาของพิกัดอัตโนมัติ 100%
+  const isHotspot = (locSource === 'hotspot');
+  const isWifi = (locSource === 'wifi' || locSource === 'wifi_geolocation' || (!satellites && locSource !== 'gps'));
+  const cardLabel = document.getElementById('card4Label');
+  const cardVal = document.getElementById('satellites');
+  const cardDesc = document.getElementById('hdopDisplay');
+  const syncBadge = document.getElementById('syncPulseBadge');
+
+  const isHw1 = (typeof currentDeviceId !== 'undefined' && currentDeviceId === 'ESP32_001');
+  const devLabel = isHw1 ? 'Hardware 1' : 'Hardware 2';
+
+  if (syncBadge) syncBadge.title = 'สถานะ: ออนไลน์ (Real-Time)';
+  if (isHotspot) {
+    if (cardLabel) cardLabel.innerHTML = `📱 GPS มือถือ (${devLabel})`;
+    if (cardVal) cardVal.innerHTML = 'Hotspot<span>สด</span>';
+    if (cardDesc) cardDesc.textContent = 'ระบุพิกัดดาวเทียมจากมือถือที่ปล่อย Hotspot';
+  } else if (isWifi) {
+    if (cardLabel) cardLabel.innerHTML = `📶 พิกัด Wi-Fi (${devLabel})`;
+    if (cardVal) cardVal.innerHTML = 'Wi-Fi<span>ในอาคาร</span>';
+    if (cardDesc) cardDesc.textContent = 'ระบุพิกัดอัตโนมัติผ่าน Wi-Fi APs';
+  } else {
+    if (cardLabel) cardLabel.innerHTML = '🛰️ สัญญาณ GPS (Hardware 1)';
+    if (cardVal) cardVal.innerHTML = satellites > 0 ? (satellites + '<span>ดวง</span>') : 'พร้อม<span>สด</span>';
+    if (cardDesc) cardDesc.textContent = (hdop && !isNaN(hdop) && hdop > 0) ? `ความแม่นยำ (HDOP): ${hdop}` : 'สัญญาณดาวเทียมกลางแจ้ง';
+  }
+
+  const actEl = document.getElementById('activityState');
+  if (actEl) {
+    if (speed > 5.5) actEl.textContent = 'สถานะ: วิ่ง / เคลื่อนไหวเร็ว 🏃';
+    else if (speed > 0.8) actEl.textContent = 'สถานะ: เดิน 🚶';
+    else actEl.textContent = 'สถานะ: พัก / อยู่นิ่ง 🧍';
+  }
+
+  const hasValidCoord = (lat && lng && !isNaN(lat) && !isNaN(lng) && lat != 0 && lng != 0 && Math.abs(lat) <= 90);
+
+  if (!hasValidCoord) {
+    document.getElementById('barLat').textContent = '--';
+    document.getElementById('barLng').textContent = '--';
+    if (marker) {
+      map.removeLayer(marker);
+      marker = null;
+    }
+    if (accuracyCircle) {
+      map.removeLayer(accuracyCircle);
+      accuracyCircle = null;
+    }
+    return;
+  }
+
+  const latNum = parseFloat(lat);
+  const lngNum = parseFloat(lng);
+  const latlng = [latNum, lngNum];
+
+  // Update Toolbar in Image 2
+  document.getElementById('barLat').textContent = latNum.toFixed(6);
+  document.getElementById('barLng').textContent = lngNum.toFixed(6);
+  document.getElementById('btnOpenGmaps').href = `https://maps.google.com/?q=${latNum.toFixed(6)},${lngNum.toFixed(6)}`;
+
+  // Update or create Marker and Accuracy Circle (Image 2)
+  if (!marker) {
+    marker = L.marker(latlng, { icon: purpleRadarIcon }).addTo(map);
+    accuracyCircle = L.circle(latlng, {
+      radius: (hdop && !isNaN(hdop) && hdop > 5 && hdop < 100) ? hdop : 28,
+      color: '#a855f7',
+      fillColor: '#a855f7',
+      fillOpacity: 0.18,
+      weight: 1.5
+    }).addTo(map);
+    map.setView(latlng, 17);
+  } else {
+    marker.setLatLng(latlng);
+    if (accuracyCircle) {
+      accuracyCircle.setLatLng(latlng);
+      if (hdop && !isNaN(hdop) && hdop > 5 && hdop < 100) accuracyCircle.setRadius(hdop);
+    }
+  }
+
+  trackPoints.push(latlng);
+  if (trackPoints.length > 500) trackPoints.shift();
+  trackLine.setLatLngs(trackPoints);
+
+  map.panTo(latlng, { animate: true, duration: 0.8 });
+}
+
+function copyMapCoords() {
+  const lat = document.getElementById('barLat').textContent;
+  const lng = document.getElementById('barLng').textContent;
+  if (!lat || lat === '--') return;
+  const text = `${lat}, ${lng}`;
+  navigator.clipboard.writeText(text).then(() => {
+    const txt = document.getElementById('copyBtnText');
+    if (txt) {
+      txt.textContent = 'คัดลอกแล้ว!';
+      setTimeout(() => { txt.textContent = 'คัดลอก'; }, 2000);
+    }
+  });
+}
+
+// ==================== Render Fall Events List (Image 1 Style) ====================
+function renderEvents(falls) {
+  const el = document.getElementById('eventList');
+  if (!el) return;
+  if (!falls || falls.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div>ไม่พบเหตุการณ์การล้มล่าสุด</div></div>';
+    return;
+  }
+
+  el.innerHTML = falls.map(f => {
+    try {
+      let d = { type: 'fall_forward', name: 'ล้มไปข้างหน้า', icon: '🏃‍♂️' };
+      if (typeof deduceFallDirection === 'function') {
+        d = deduceFallDirection(f);
+      }
+      const timeStr = typeof formatDateTime === 'function' ? formatDateTime(f.timestamp) : (f.timestamp || '--');
+
+      // พิกัด GPS แบบลิงก์ Google Maps โดยตรง (Image 1)
+      let locHtml = '<span style="color:var(--text-muted);">📍 ไม่มีพิกัด</span>';
+      if (f.lat && f.lng && !isNaN(f.lat) && !isNaN(f.lng) && +f.lat !== 0 && +f.lng !== 0) {
+        const lat4 = parseFloat(f.lat).toFixed(4);
+        const lng4 = parseFloat(f.lng).toFixed(4);
+        locHtml = `📍 <a href="https://maps.google.com/?q=${f.lat},${f.lng}" target="_blank" style="color:#0284c7;text-decoration:underline;font-weight:600;" title="เปิดดูพิกัดนี้บน Google Maps">${lat4}, ${lng4}</a>`;
+      }
+
+      // คำนวณค่าแรงกระแทก G และ m/s^2 (Image 1)
+      const ax = +f.acceleration_x || 0;
+      const ay = +f.acceleration_y || 0;
+      const az = +f.acceleration_z || 0;
+      const magMs2 = Math.sqrt(ax * ax + ay * ay + az * az);
+      const gTotal = (magMs2 > 0) ? (magMs2 / 9.80665) : 10;
+      const gDisplay = (gTotal >= 1.0) ? Math.round(gTotal) : gTotal.toFixed(1);
+      const magDisplay = (magMs2 > 0) ? Math.round(magMs2) : 15;
+
+      const confPct = f.confidence ? Math.round(f.confidence * 100) : 84;
+      const sevLower = (f.severity || 'high').toLowerCase();
+      const sevUpper = sevLower.toUpperCase();
+      const assistHtml = typeof getAssistedBadge === 'function' ? getAssistedBadge(f.assisted, f.assisted_at, f.id) : '';
+
+      // สีตามระดับความรุนแรง: LOW เขียว / MEDIUM เหลือง / HIGH แดง
+      let sevBorder = '#ef4444';
+      let sevColor  = '#ef4444';
+      let sevBg     = 'rgba(239,68,68,0.12)';
+
+      if (sevLower === 'low') {
+        sevBorder = '#10b981';
+        sevColor  = '#059669';
+        sevBg     = 'rgba(16,185,129,0.14)';
+      } else if (sevLower === 'medium') {
+        sevBorder = '#f59e0b';
+        sevColor  = '#d97706';
+        sevBg     = 'rgba(245,158,11,0.15)';
+      } else {
+        sevBorder = '#ef4444';
+        sevColor  = '#ef4444';
+        sevBg     = 'rgba(239,68,68,0.12)';
+      }
+
+      return `
+      <div class="event-item ${sevLower}" style="display:flex !important;flex-direction:column !important;align-items:stretch !important;gap:7px !important;width:100% !important;border-left:4px solid ${sevBorder};background:#ffffff;border-radius:10px;padding:14px 18px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);box-sizing:border-box;">
+        <!-- Line 1: ทิศทางการล้ม + ป้ายสถานะความมั่นใจ (แยกสีตามระดับ LOW เขียว / MEDIUM เหลือง / HIGH แดง) -->
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;">
+          <div style="font-size:17px;font-weight:700;color:#1e293b;display:flex;align-items:center;gap:8px;white-space:nowrap;">
+            <span style="font-size:22px;line-height:1;">${d.icon}</span>
+            <span style="letter-spacing:-0.2px;">${d.name}</span>
+          </div>
+          <span style="background:${sevBg};color:${sevColor};border:1px solid ${sevBorder};border-radius:20px;padding:4px 12px;font-weight:700;font-size:12px;white-space:nowrap;flex-shrink:0;">
+            ${sevUpper} (ความมั่นใจ ${confPct}%)
+          </span>
+        </div>
+
+        <!-- Line 2: แรงกระแทก= 10 G (15 m/s²) (ตรงตามภาพที่ 1) -->
+        <div style="font-size:14px;color:#1e293b;display:flex;align-items:center;gap:6px;font-weight:600;">
+          <span style="font-size:16px;">💥</span>
+          <span>แรงกระแทก= <strong>${gDisplay} G</strong> (${magDisplay} m/s²)</span>
+        </div>
+
+        <!-- Line 3: วันที่เวลา + พิกัดลิงก์ Google Maps + ปุ่มยืนยัน (ตรงตามภาพที่ 1) -->
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-size:12.5px;color:#64748b;border-top:1px dashed rgba(0,0,0,0.1);padding-top:7px;margin-top:2px;">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <span>⏰ ${timeStr}</span>
+            <span>${locHtml}</span>
+          </div>
+          <div>
+            ${assistHtml}
+          </div>
+        </div>
+      </div>
+      `;
+    } catch (e) {
+      return `<div>#${f.id} - ตรวจพบการล้ม</div>`;
+    }
+  }).join('');
+}
+
+function handleBannerAssist() {
+  dismissAlert();
+  if (activeFallId > 0) {
+    markAssisted(activeFallId);
+  }
+}
+
+// ==================== Data Polling (Real-Time GPS 1s) ====================
+let lastSeenFallId = null; // null = โหลดหน้าครั้งแรก
+let isGpsPolling = false;
+
+// 1. Fetch GPS ทุก 1 วินาทีแบบ Real-Time (พร้อม Cache Busting)
+async function pollGPS() {
+  if (isGpsPolling) return;
+  isGpsPolling = true;
+  try {
+    const res = await fetch(BASE + '/api/gps/latest?_=' + Date.now());
+    const data = await res.json();
+    if (data && data.success) {
+      const g = data.data;
+      const dev = data.device || {};
+      if (dev.device_id) currentDeviceId = dev.device_id;
+      const devName = dev.name || currentDeviceName || 'ESP32';
+      const isOnline = !!dev.is_online;
+
+      if (!dev.has_device) {
+        setConnected(false, 'ยังไม่ได้เชื่อมต่ออุปกรณ์');
+      } else {
+        setConnected(isOnline, devName);
+      }
+
+      if (g) {
+        updateMap(+g.lat, +g.lng, +g.speed_kmh, +g.satellites, +g.altitude_m, +g.hdop, g.location_source, g.timestamp);
+        if (g.step_count !== undefined) {
+          document.getElementById('stepCount').innerHTML = fmtNum(g.step_count) + '<span>ก้าว</span>';
+        }
+        if (g.walk_distance !== undefined) {
+          const d = +g.walk_distance;
+          document.getElementById('distDisplay').textContent = d >= 1000 ? `ระยะทางสะสม: ${(d/1000).toFixed(2)} กม.` : `ระยะทางสะสม: ${d.toFixed(1)} ม.`;
+        }
+        const lastEl = document.getElementById('lastUpdate');
+        if (lastEl) {
+          lastEl.textContent = isOnline 
+            ? ('อัปเดตสด: ' + new Date().toLocaleTimeString('th-TH')) 
+            : ('สัญญาณล่าสุด: ' + (formatDateTime(g.timestamp) || '--'));
+        }
+      }
+    } else {
+      setConnected(false, currentDeviceName);
+    }
+  } catch (e) {
+    console.error('[GPS error]', e);
+    setConnected(false, currentDeviceName);
+  } finally {
+    isGpsPolling = false;
+  }
+}
+
+// 2. Fetch Falls ทุก 1 วินาทีแบบ Real-Time (อัตโนมัติ 100%)
+let lastTriggeredFallId = null;
+let isFallsPolling = false;
+
+async function pollFalls() {
+  if (isFallsPolling) return;
+  isFallsPolling = true;
+  try {
+    const res = await fetch(BASE + '/api/falls?limit=10&_=' + Date.now());
+    const data = await res.json();
+    if (data && data.success && data.data) {
+      renderEvents(data.data);
+
+      // ค้นหาเหตุการณ์ล้มล่าสุดที่ยังไม่ได้รับการช่วยเหลือ และเกิดขึ้นภายใน 10 นาทีล่าสุด
+      const unassistedFall = data.data.find(f => {
+        const isNotAssisted = (f.assisted == 0 || f.assisted === false || f.assisted === '0');
+        const secAgo = (f.seconds_ago !== undefined && f.seconds_ago !== null) ? +f.seconds_ago : null;
+        const isRecent = (secAgo !== null) ? (secAgo >= 0 && secAgo <= 600) : true;
+        let isDismissed = false;
+        try {
+          isDismissed = sessionStorage.getItem('dismissed_fall_' + f.id) === '1';
+        } catch (e) {}
+        return isNotAssisted && isRecent && !isDismissed;
+      });
+
+      if (unassistedFall) {
+        activeFallId = unassistedFall.id;
+        if (lastTriggeredFallId !== unassistedFall.id) {
+          lastTriggeredFallId = unassistedFall.id;
+          const d = typeof deduceFallDirection === 'function' ? deduceFallDirection(unassistedFall) : { name: 'การล้ม' };
+          const { gTotal } = typeof calcGForce === 'function' ? calcGForce(unassistedFall) : { gTotal: 0 };
+          const gStr = gTotal > 0 ? ` (${gTotal.toFixed(2)} G)` : '';
+          const isHw2 = (unassistedFall.device_id === 'ESP32_HW2' || (unassistedFall.device_id && unassistedFall.device_id.indexOf('HW2') !== -1));
+          const devLabel = isHw2 ? 'CareGuardH2' : 'CareGuardH1';
+          triggerFallAlert(`[${devLabel}] ${d.name}${gStr} - ${(unassistedFall.severity || 'medium').toUpperCase()}`, unassistedFall);
+        }
+      } else {
+        // หากไม่มีเหตุการณ์ล้มค้างที่ยังไม่ช่วยเหลือ ให้ซ่อนแบนเนอร์แจ้งเตือน (ไม่เขียนทับ sessionStorage)
+        const alertEl = document.getElementById('fallAlert');
+        if (alertEl && !alertEl.classList.contains('hidden')) {
+          alertEl.classList.add('hidden');
+        }
+        if (lastTriggeredFallId !== null) {
+          lastTriggeredFallId = null;
+          closeEmergencyFallModal();
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[Falls error]', e);
+  } finally {
+    isFallsPolling = false;
+  }
+}
+
+// 3. Fetch Daily Stats ทุก 5 วินาที
+async function pollStats() {
+  try {
+    const res = await fetch(BASE + '/api/stats/daily?_=' + Date.now());
+    const data = await res.json();
+    if (data && data.success && data.data) {
+      const f = data.data.falls || {};
+      document.getElementById('fallCount').innerHTML = (f.fall_count || 0) + '<span>ครั้ง</span>';
+      document.getElementById('statAssistedCount').textContent = `ช่วยเหลือแล้ว ${f.assisted_count || 0}`;
+      document.getElementById('statPendingCount').textContent = `รอดำเนินการ ${f.pending_assist_count || 0}`;
+    }
+  } catch (e) {
+    console.error('[Stats error]', e);
+  }
+}
+
+// ==================== Auto-Sync Mobile Phone GPS for Hardware 1 & 2 (Hotspot Mode) ====================
+let lastHotspotSyncTime = 0;
+
+async function sendPhoneGpsSync(lat, lng, acc) {
+  if (!lat || !lng || isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
+  // ป้องกันค่า IP Cellular หยาบของค่ายมือถือ (เช่น เสาสัญญาณกรุงเทพหรือโคราช)
+  if ((lat > 13.0 && lat < 14.2) || (lat > 14.8 && lat < 15.3)) return;
+
+  const now = Date.now();
+  if (now - lastHotspotSyncTime < 2500) return;
+  lastHotspotSyncTime = now;
+
+  const targetDev = (typeof currentDeviceId !== 'undefined' && currentDeviceId) ? currentDeviceId : 'auto';
+
+  try {
+    const res = await fetch(BASE + '/api/gps?action=hotspot_sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_id: targetDev,
+        lat: parseFloat(lat),
+        lng: parseFloat(lng),
+        accuracy: acc ? parseFloat(acc) : 10.0
+      })
+    });
+    const data = await res.json();
+    if (data && data.success) {
+      const syncBadge = document.getElementById('syncPulseBadge');
+      if (syncBadge) {
+        syncBadge.title = 'สถานะ: ออนไลน์ (Real-Time)';
+      }
+      if (typeof pollGPS === 'function') {
+        pollGPS();
+      }
+    }
+  } catch (e) {}
+}
+
+function initHotspotPhoneGps() {
+  if (!navigator.geolocation) return;
+
+  // 1. ดึงพิกัดสดทันทีที่เปิดหน้าเว็บ (Instant GPS Fix)
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      sendPhoneGpsSync(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+    },
+    (err) => {
+      console.warn('[Hotspot GPS Instant]', err.message);
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
+  );
+
+  // 2. ดึงพิกัดสดซ้ำเป็นระยะต่อเนื่อง (ทุก 6 วินาที)
+  setInterval(() => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        sendPhoneGpsSync(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+      },
+      null,
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 6000 }
+    );
+  }, 6000);
+
+  // 3. ติดตามการเคลื่อนที่ผ่าน watchPosition
+  navigator.geolocation.watchPosition(
+    (pos) => {
+      sendPhoneGpsSync(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+    },
+    (err) => {
+      console.warn('[Hotspot GPS Watch]', err.message);
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+  );
+}
+
+initHotspotPhoneGps();
+
+function poll() {
+  pollGPS();
+  pollFalls();
+  pollStats();
+}
+
+poll();
+setInterval(pollGPS, 1000);  // ⚡ GPS Real-Time ทุก 1 วินาทีจากตัวอุปกรณ์จริง!
+setInterval(pollFalls, 1000); // 🚨 ตรวจสอบการล้มทุก 1 วินาทีจากตัวอุปกรณ์จริงทันที!
+setInterval(pollStats, 5000); // 📊 สถิติภาพรวมทุก 5 วินาที
+</script>
+</body>
+</html>

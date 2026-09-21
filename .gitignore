@@ -1,0 +1,61 @@
+# ===================================================================
+# CareGuard AI - .gitignore
+# ===================================================================
+
+# PlatformIO & Embedded Build Artifacts
+**/.pio/
+**/.pioenvs/
+**/.piolibdeps/
+**/.vscode/
+**/.cache/
+**/compile_commands.json
+**/*.bin
+**/*.elf
+**/*.hex
+
+# Python & Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+**/__pycache__/
+**/*.py[cod]
+*$py.class
+
+# Environment & Secrets (Security Sensitive)
+**/.env
+**/.env.local
+**/.env.production
+CareGuardAi/SoftwarePHP/.env
+CollectData/CollectData_Web/config.php
+
+# Operating System & IDE Artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# Temporary & Local Backup Directories
+_remote_backup/
+Test GPS NEO-7M/
+TestGPS/
+Test_GPS_NEO7M/
+SisFallAnalysis-master/
+DB-FZ.txt
+*.tmp
+*.bak
+*.log
+
+# Root-level redundant documents (Cleanly organized inside /docs)
+/*.docx
+/*.pdf
+/*.pptx
+/*.png
+/generate_diagrams.py
+/generate_presentation.py
+/Slide_Presentation_Script_and_Prompt.md
+!docs/**
+diagrams/
+

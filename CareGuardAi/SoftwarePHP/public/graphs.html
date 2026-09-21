@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>กราฟ & การวิเคราะห์ | CareGuard AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=9.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html" class="nav-brand"><span>⚡</span> CareGuard <span>AI</span></a>
+  <a href="index.html"   class="nav-link">🏠 หน้าหลัก</a>
+  <a href="health.html"  class="nav-link">❤️ สุขภาพ & ก้าวเดิน</a>
+  <a href="graphs.html"  class="nav-link active">📊 กราฟเซ็นเซอร์</a>
+  <a href="report.html"  class="nav-link">📋 รายงานประวัติ</a>
+  <a href="admin.html"   class="nav-link nav-admin-link" id="navAdminLink" style="display:none;color:#fbbf24;font-weight:600;">👑 ผู้ดูแลระบบ</a>
+  <span class="nav-spacer"></span>
+  <span class="status-badge">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">กำลังเชื่อมต่อ...</span>
+  </span>
+
+  <!-- Avatar Profile Dropdown -->
+  <div class="nav-profile-dropdown" id="navProfileDropdown">
+    <button class="nav-profile-btn" onclick="toggleProfileDropdown(event)" id="navProfileBtn">
+      <span class="nav-avatar" id="navAvatar">👤</span>
+      <span class="nav-username" id="navUsername">ผู้ใช้งาน</span>
+      <span class="nav-dropdown-caret">▼</span>
+    </button>
+    <div class="dropdown-menu" id="profileDropdownMenu" style="display:none;">
+      <div class="dropdown-header">
+        <div class="dropdown-user-avatar" id="menuAvatar">👤</div>
+        <div class="dropdown-user-info">
+          <div class="dropdown-user-name" id="menuUsername">ผู้ใช้งาน</div>
+          <div class="dropdown-user-role" id="menuUserRole">ผู้ใช้งาน</div>
+        </div>
+      </div>
+      <div class="dropdown-divider"></div>
+      <a href="admin.html" class="dropdown-item menu-admin-link" id="menuAdminLink" style="display:none;color:#fbbf24;font-weight:600;">
+        <span>👑</span> แผงควบคุมระบบ (Admin)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openProfileModal()">
+        <span>👤</span> ข้อมูลโปรไฟล์ & ติดต่อฉุกเฉิน
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openDevicesModal()">
+        <span>⚙️</span> จัดการอุปกรณ์ (MAC Address)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openThemeModal()">
+        <span>🎨</span> ธีม & การแสดงผล
+      </a>
+      <div class="dropdown-divider"></div>
+      <a href="login.html?logout=1" class="dropdown-item dropdown-item-danger">
+        <span>🚪</span> ออกจากระบบ
+      </a>
+    </div>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header">
+    <div>
+      <h1>📊 กราฟสถิติ & การวิเคราะห์การเคลื่อนไหว</h1>
+      <p style="color:var(--text-secondary);font-size:13.5px;margin-top:3px;">แสดงผลข้อมูลสถิติ 7 วัน, กิจกรรมรายชั่วโมง, และสัดส่วนทิศทางการล้ม (TinyML)</p>
+    </div>
+  </div>
+
+  <!-- Weekly Steps & Distance Chart -->
+  <div class="card" style="margin-bottom:24px">
+    <div class="card-header">
+      <span class="card-title">📅 สถิติ 7 วันย้อนหลัง</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm" id="btnTabSteps" onclick="switchWeeklyChart('steps')">👣 ก้าวเดิน</button>
+        <button class="btn btn-outline btn-sm" id="btnTabDist" onclick="switchWeeklyChart('dist')">📏 ระยะทาง</button>
+        <button class="btn btn-outline btn-sm" id="btnTabFalls" onclick="switchWeeklyChart('falls')">⚠️ การล้ม</button>
+      </div>
+    </div>
+    <div style="height:320px;">
+      <canvas id="weeklyChart"></canvas>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Hourly Activity -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🕐 กิจกรรมรายชั่วโมง (วันนี้)</span>
+      </div>
+      <div style="height:280px;">
+        <canvas id="hourlyChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Fall Direction Breakdown (Doughnut) -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🎯 สัดส่วนประเภท/ทิศทางการล้ม (TinyML)</span>
+      </div>
+      <div style="height:280px;">
+        <canvas id="fallTypesChart"></canvas>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="js/shared.js?v=9.0"></script>
+<script>
+let weeklyChart = null;
+let hourlyChart = null;
+let fallTypesChart = null;
+let weeklyDataStore = { labels: [], steps: [], dist: [], falls: [] };
+let currentTab = 'steps';
+
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { labels: { color: '#9aa5b5', font: { family: "'Segoe UI', sans-serif" } } }
+  },
+  scales: {
+    y: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#9aa5b5' } },
+    x: { grid: { display: false }, ticks: { color: '#9aa5b5' } }
+  }
+};
+
+function initCharts() {
+  const ctxWeekly = document.getElementById('weeklyChart').getContext('2d');
+  weeklyChart = new Chart(ctxWeekly, {
+    type: 'bar',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'ก้าวเดิน (ก้าว)',
+        data: [],
+        backgroundColor: 'rgba(0, 210, 255, 0.6)',
+        borderColor: '#00d2ff',
+        borderWidth: 1.5,
+        borderRadius: 6
+      }]
+    },
+    options: { ...chartDefaults }
+  });
+
+  const ctxHourly = document.getElementById('hourlyChart').getContext('2d');
+  hourlyChart = new Chart(ctxHourly, {
+    type: 'line',
+    data: {
+      labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+      datasets: [{
+        label: 'ก้าวเดินสะสม',
+        data: new Array(24).fill(0),
+        borderColor: '#00e676',
+        backgroundColor: 'rgba(0, 230, 118, 0.15)',
+        fill: true,
+        tension: 0.35
+      }]
+    },
+    options: { ...chartDefaults }
+  });
+
+  const ctxTypes = document.getElementById('fallTypesChart').getContext('2d');
+  fallTypesChart = new Chart(ctxTypes, {
+    type: 'doughnut',
+    data: {
+      labels: ['ล้มไปข้างหน้า', 'ล้มไปข้างหลัง', 'ล้มด้านข้าง', 'ล้มแนวดิ่ง', 'ทั่วไป'],
+      datasets: [{
+        data: [0, 0, 0, 0, 0],
+        backgroundColor: ['#38bdf8', '#fb7185', '#c084fc', '#facc15', '#94a3b8'],
+        borderWidth: 2,
+        borderColor: '#16213e'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: '#9aa5b5' } }
+      }
+    }
+  });
+}
+
+function switchWeeklyChart(type) {
+  currentTab = type;
+  document.getElementById('btnTabSteps').className = type === 'steps' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+  document.getElementById('btnTabDist').className  = type === 'dist' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+  document.getElementById('btnTabFalls').className = type === 'falls' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+
+  if (!weeklyChart) return;
+
+  if (type === 'steps') {
+    weeklyChart.data.datasets[0].label = 'ก้าวเดิน (ก้าว)';
+    weeklyChart.data.datasets[0].data = weeklyDataStore.steps;
+    weeklyChart.data.datasets[0].backgroundColor = 'rgba(0, 210, 255, 0.6)';
+    weeklyChart.data.datasets[0].borderColor = '#00d2ff';
+  } else if (type === 'dist') {
+    weeklyChart.data.datasets[0].label = 'ระยะทาง (เมตร)';
+    weeklyChart.data.datasets[0].data = weeklyDataStore.dist;
+    weeklyChart.data.datasets[0].backgroundColor = 'rgba(123, 47, 247, 0.6)';
+    weeklyChart.data.datasets[0].borderColor = '#7b2ff7';
+  } else {
+    weeklyChart.data.datasets[0].label = 'จำนวนการล้ม (ครั้ง)';
+    weeklyChart.data.datasets[0].data = weeklyDataStore.falls;
+    weeklyChart.data.datasets[0].backgroundColor = 'rgba(255, 82, 82, 0.6)';
+    weeklyChart.data.datasets[0].borderColor = '#ff5252';
+  }
+  weeklyChart.update();
+}
+
+async function loadGraphData() {
+  try {
+    const [wRes, hRes, dRes] = await Promise.all([
+      fetch(BASE + '/api/stats/weekly').then(r => r.json()).catch(() => ({})),
+      fetch(BASE + '/api/stats/hourly').then(r => r.json()).catch(() => ({})),
+      fetch(BASE + '/api/stats/daily').then(r => r.json()).catch(() => ({}))
+    ]);
+
+    if (wRes && wRes.success && wRes.data) {
+      const s = wRes.data.weeklySteps || [];
+      const f = wRes.data.weeklyFalls || [];
+      const fMap = {};
+      f.forEach(item => { fMap[item.date] = item.fall_count; });
+
+      // สร้าง 7 วันย้อนหลัง
+      const dateList = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        dateList.push(d.toISOString().split('T')[0]);
+      }
+
+      const sMap = {};
+      s.forEach(item => { sMap[item.date] = item; });
+
+      weeklyDataStore.labels = dateList.map(dt => new Date(dt).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric' }));
+      weeklyDataStore.steps  = dateList.map(dt => sMap[dt]?.total_steps || 0);
+      weeklyDataStore.dist   = dateList.map(dt => sMap[dt]?.total_distance || 0);
+      weeklyDataStore.falls  = dateList.map(dt => fMap[dt] || 0);
+
+      weeklyChart.data.labels = weeklyDataStore.labels;
+      switchWeeklyChart(currentTab);
+    }
+
+    if (hRes && hRes.success && hRes.data && hRes.data.hourlySteps) {
+      const hSteps = new Array(24).fill(0);
+      hRes.data.hourlySteps.forEach(r => { hSteps[r.hour] = r.steps; });
+      hourlyChart.data.datasets[0].data = hSteps;
+      hourlyChart.update();
+    }
+
+    if (dRes && dRes.success && dRes.data && dRes.data.fallTypes) {
+      const typeMap = {
+        'fall_forward': 'ล้มไปข้างหน้า (Fall Forward)',
+        'fall_backward': 'ล้มไปข้างหลัง (Fall Backward)',
+        'fall_lateral_left': 'ล้มไปด้านข้างซ้าย (Fall Lateral Left)',
+        'fall_left': 'ล้มไปด้านข้างซ้าย (Fall Lateral Left)',
+        'fall_lateral_right': 'ล้มไปด้านข้างขวา (Fall Lateral Right)',
+        'fall_right': 'ล้มไปด้านข้างขวา (Fall Lateral Right)',
+        'fall_vertical': 'ล้มแนวดิ่ง/ทรุดตัว (Vertical Fall)',
+        'fall_general': 'การล้มทั่วไป (General Fall)'
+      };
+
+      const consolidated = {};
+      (dRes.data.fallTypes || []).forEach(t => {
+        let name = t.fall_type_name || '';
+        let key = (t.fall_type || '').toLowerCase().trim();
+        if (key === 'fall_left') key = 'fall_lateral_left';
+        if (key === 'fall_right') key = 'fall_lateral_right';
+
+        if (typeMap[key]) {
+          name = typeMap[key];
+        } else if (!name || name.includes('?') || name === 'การล้มทั่วไป') {
+          name = 'การล้มทั่วไป (General Fall)';
+        }
+
+        consolidated[name] = (consolidated[name] || 0) + (parseInt(t.count) || 0);
+      });
+
+      const labels = Object.keys(consolidated);
+      const data = Object.values(consolidated);
+
+      if (labels.length > 0) {
+        fallTypesChart.data.labels = labels;
+        fallTypesChart.data.datasets[0].data = data;
+        fallTypesChart.update();
+      }
+    }
+
+    setConnected(true);
+  } catch (err) {
+    setConnected(false);
+  }
+}
+
+initCharts();
+loadGraphData();
+setInterval(loadGraphData, 10000);
+</script>
+</body>
+</html>

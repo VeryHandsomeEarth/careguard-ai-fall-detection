@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>สุขภาพ & ก้าวเดิน | CareGuard AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=9.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html" class="nav-brand"><span>⚡</span> CareGuard <span>AI</span></a>
+  <a href="index.html"   class="nav-link">🏠 หน้าหลัก</a>
+  <a href="health.html"  class="nav-link active">❤️ สุขภาพ & ก้าวเดิน</a>
+  <a href="graphs.html"  class="nav-link">📊 กราฟเซ็นเซอร์</a>
+  <a href="report.html"  class="nav-link">📋 รายงานประวัติ</a>
+  <a href="admin.html"   class="nav-link nav-admin-link" id="navAdminLink" style="display:none;color:#fbbf24;font-weight:600;">👑 ผู้ดูแลระบบ</a>
+  <span class="nav-spacer"></span>
+  <span class="status-badge">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">กำลังเชื่อมต่อ...</span>
+  </span>
+
+  <!-- Avatar Profile Dropdown -->
+  <div class="nav-profile-dropdown" id="navProfileDropdown">
+    <button class="nav-profile-btn" onclick="toggleProfileDropdown(event)" id="navProfileBtn">
+      <span class="nav-avatar" id="navAvatar">👤</span>
+      <span class="nav-username" id="navUsername">ผู้ใช้งาน</span>
+      <span class="nav-dropdown-caret">▼</span>
+    </button>
+    <div class="dropdown-menu" id="profileDropdownMenu" style="display:none;">
+      <div class="dropdown-header">
+        <div class="dropdown-user-avatar" id="menuAvatar">👤</div>
+        <div class="dropdown-user-info">
+          <div class="dropdown-user-name" id="menuUsername">ผู้ใช้งาน</div>
+          <div class="dropdown-user-role" id="menuUserRole">ผู้ใช้งาน</div>
+        </div>
+      </div>
+      <div class="dropdown-divider"></div>
+      <a href="admin.html" class="dropdown-item menu-admin-link" id="menuAdminLink" style="display:none;color:#fbbf24;font-weight:600;">
+        <span>👑</span> แผงควบคุมระบบ (Admin)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openProfileModal()">
+        <span>👤</span> ข้อมูลโปรไฟล์ & ติดต่อฉุกเฉิน
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openDevicesModal()">
+        <span>⚙️</span> จัดการอุปกรณ์ (MAC Address)
+      </a>
+      <a href="javascript:void(0)" class="dropdown-item" onclick="openThemeModal()">
+        <span>🎨</span> ธีม & การแสดงผล
+      </a>
+      <div class="dropdown-divider"></div>
+      <a href="login.html?logout=1" class="dropdown-item dropdown-item-danger">
+        <span>🚪</span> ออกจากระบบ
+      </a>
+    </div>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header">
+    <div>
+      <h1>❤️ ข้อมูลสุขภาพ & กิจกรรมประจำวัน</h1>
+      <p style="color:var(--text-secondary);font-size:13.5px;margin-top:3px;">ติดตามการเคลื่อนไหว ก้าวเดิน ระยะทาง และอัตราการเกิดการล้ม</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <span style="font-size:14px;color:var(--text-secondary)">ผู้ใช้งาน: <strong id="greetName" style="color:var(--accent)">ผู้ใช้ทั่วไป</strong></span>
+      <span class="pill pill-blue" id="bmiPill">BMI: --</span>
+    </div>
+  </div>
+
+  <!-- Stats Cards Row (3 Cards: Steps, Distance, Falls) -->
+  <div class="grid-3">
+    <div class="stat-card stat-success">
+      <div class="stat-label">👣 ก้าวเดินวันนี้</div>
+      <div class="stat-value" id="stepCount">0<span>ก้าว</span></div>
+      <div class="stat-desc">เป้าหมาย: <span id="stepGoalLabel">10,000</span> ก้าว</div>
+      <div style="background:rgba(255,255,255,0.1);border-radius:10px;height:6px;margin-top:10px;overflow:hidden;">
+        <div id="stepProgressBar" style="background:var(--success);height:100%;width:0%;transition:width 0.5s;"></div>
+      </div>
+    </div>
+
+    <div class="stat-card stat-purple">
+      <div class="stat-label">📏 ระยะทางสะสม</div>
+      <div class="stat-value" id="distance">0<span>ม.</span></div>
+      <div class="stat-desc">เป้าหมาย: <span id="distGoalLabel">5,000</span> ม.</div>
+    </div>
+
+    <div class="stat-card stat-danger">
+      <div class="stat-label">⚠️ การล้มวันนี้</div>
+      <div class="stat-value" id="fallCount">0<span>ครั้ง</span></div>
+      <div class="stat-desc" id="assistedSummary">ได้รับการช่วยเหลือ: 0 ครั้ง</div>
+    </div>
+  </div>
+
+  <!-- Weekly Table Summary -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📅 สรุปสถิติย้อนหลัง 7 วัน</span>
+    </div>
+    <div class="table-wrap">
+      <table id="weeklyTable">
+        <thead>
+          <tr>
+            <th>วันที่</th>
+            <th>ก้าวเดินรวม</th>
+            <th>ระยะทาง</th>
+            <th>จำนวนการล้ม</th>
+            <th>สถานะความปลอดภัย</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyBody">
+          <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">กำลังโหลดข้อมูล...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script src="js/shared.js?v=9.0"></script>
+<script>
+async function loadHealth() {
+  try {
+    const [statsR, profileR] = await Promise.all([
+      fetch(BASE + '/api/stats/daily').then(r => r.json()).catch(() => ({})),
+      fetch(BASE + '/api/profile').then(r => r.json()).catch(() => ({}))
+    ]);
+
+    if (profileR && profileR.success && profileR.data) {
+      const p = profileR.data;
+      if (p.name) document.getElementById('greetName').textContent = p.name;
+      if (p.weight && p.height) {
+        const hM = p.height / 100;
+        const bmi = (p.weight / (hM * hM)).toFixed(1);
+        document.getElementById('bmiPill').textContent = `BMI: ${bmi}`;
+      }
+      if (p.step_goal) document.getElementById('stepGoalLabel').textContent = fmtNum(p.step_goal);
+      if (p.distance_goal) document.getElementById('distGoalLabel').textContent = fmtNum(p.distance_goal);
+    }
+
+    if (statsR && statsR.success && statsR.data) {
+      const s = statsR.data.steps || {};
+      const f = statsR.data.falls || {};
+      const g = statsR.data.lastGps || {};
+
+      const steps = s.total_steps || 0;
+      const dist = s.total_distance || 0;
+      const goal = parseInt(document.getElementById('stepGoalLabel').textContent.replace(/,/g, '')) || 10000;
+
+      document.getElementById('stepCount').innerHTML = fmtNum(steps) + '<span>ก้าว</span>';
+      document.getElementById('distance').innerHTML = dist >= 1000 ? `${(dist/1000).toFixed(2)}<span>กม.</span>` : `${Math.round(dist)}<span>ม.</span>`;
+
+      document.getElementById('fallCount').innerHTML = (f.fall_count || 0) + '<span>ครั้ง</span>';
+      document.getElementById('assistedSummary').textContent = `ได้รับการช่วยเหลือ: ${f.assisted_count || 0} ครั้ง`;
+
+      const pct = Math.min(100, Math.round((steps / goal) * 100));
+      document.getElementById('stepProgressBar').style.width = pct + '%';
+      setConnected(true);
+    }
+
+    const wRes = await fetch(BASE + '/api/stats/weekly');
+    const wData = await wRes.json();
+    if (wData && wData.success && wData.data) {
+      renderWeeklyTable(wData.data.weeklySteps || [], wData.data.weeklyFalls || []);
+    }
+  } catch (e) {
+    setConnected(false);
+  }
+}
+
+function renderWeeklyTable(stepsArr, fallsArr) {
+  const tbody = document.getElementById('weeklyBody');
+  const dateMap = {};
+  
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    dateMap[dateStr] = { date: dateStr, steps: 0, distance: 0, falls: 0 };
+  }
+
+  (stepsArr || []).forEach(s => {
+    if (dateMap[s.date]) {
+      dateMap[s.date].steps = s.total_steps || 0;
+      dateMap[s.date].distance = s.total_distance || 0;
+    } else {
+      dateMap[s.date] = { date: s.date, steps: s.total_steps || 0, distance: s.total_distance || 0, falls: 0 };
+    }
+  });
+
+  (fallsArr || []).forEach(f => {
+    if (dateMap[f.date]) {
+      dateMap[f.date].falls = f.fall_count || 0;
+    } else {
+      dateMap[f.date] = { date: f.date, steps: 0, distance: 0, falls: f.fall_count || 0 };
+    }
+  });
+
+  const sortedDates = Object.values(dateMap).sort((a, b) => b.date.localeCompare(a.date));
+
+  tbody.innerHTML = sortedDates.map(row => {
+    const d = new Date(row.date).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+    const falls = row.falls || 0;
+    const safetyBadge = falls === 0 ? '<span class="pill pill-green">🟢 ปลอดภัย</span>' : `<span class="pill pill-red">⚠️ ล้ม ${falls} ครั้ง</span>`;
+    const distM = +row.distance || 0;
+    const distStr = distM >= 1000 ? (distM/1000).toFixed(2) + ' กม.' : Math.round(distM) + ' ม.';
+
+    return `
+      <tr>
+        <td><strong>${d}</strong></td>
+        <td>${fmtNum(row.steps)} ก้าว</td>
+        <td>${distStr}</td>
+        <td>${falls} ครั้ง</td>
+        <td>${safetyBadge}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+loadHealth();
+setInterval(loadHealth, 6000);
+</script>
+</body>
+</html>

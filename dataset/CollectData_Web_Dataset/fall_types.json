@@ -1,0 +1,250 @@
+[
+  {
+    "id": 1,
+    "code": "fall_forward",
+    "name_th": "ล้มไปข้างหน้า",
+    "name_en": "Fall Forward",
+    "category": "fall",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 2,
+    "code": "fall_backward",
+    "name_th": "ล้มไปข้างหลัง",
+    "name_en": "Fall Backward",
+    "category": "fall",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 3,
+    "code": "fall_lateral",
+    "name_th": "ล้มไปด้านข้าง",
+    "name_en": "Lateral Fall",
+    "category": "fall",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 4,
+    "code": "fall_sitting",
+    "name_th": "ล้มจากท่านั่ง",
+    "name_en": "Fall from Sitting",
+    "category": "fall",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 5,
+    "code": "near_fall",
+    "name_th": "เกือบล้ม",
+    "name_en": "Near Fall",
+    "category": "fall",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 16,
+    "code": "fall_left",
+    "name_th": "ล้มไปด้านซ้าย",
+    "name_en": "Fall Left",
+    "category": "fall",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 17,
+    "code": "fall_right",
+    "name_th": "ล้มไปด้านขวา",
+    "name_en": "Fall Right",
+    "category": "fall",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 6,
+    "code": "adl_walk",
+    "name_th": "เดิน",
+    "name_en": "Walking",
+    "category": "adl",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 7,
+    "code": "adl_jog",
+    "name_th": "วิ่งเหยาะ",
+    "name_en": "Jogging",
+    "category": "adl",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 8,
+    "code": "adl_sit",
+    "name_th": "นั่ง",
+    "name_en": "Sitting",
+    "category": "adl",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 9,
+    "code": "adl_stand",
+    "name_th": "ยืน",
+    "name_en": "Standing",
+    "category": "adl",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 10,
+    "code": "adl_stairs",
+    "name_th": "ขึ้นลงบันได",
+    "name_en": "Stairs",
+    "category": "adl",
+    "created_at": "2026-06-16 10:49:38"
+  },
+  {
+    "id": 23,
+    "code": "adl_sit_down",
+    "name_th": "นั่งลงปกติ",
+    "name_en": "Normal Sit Down",
+    "category": "adl",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 24,
+    "code": "adl_chair_up",
+    "name_th": "ลุกขึ้นจากเก้าอี้",
+    "name_en": "Stand Up from Chair",
+    "category": "adl",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 25,
+    "code": "adl_stairs_up",
+    "name_th": "ขึ้นบันได",
+    "name_en": "Upstairs",
+    "category": "adl",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 26,
+    "code": "adl_stairs_down",
+    "name_th": "ลงบันได",
+    "name_en": "Downstairs",
+    "category": "adl",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 27,
+    "code": "adl_pickup",
+    "name_th": "ก้มเก็บของ",
+    "name_en": "Pick Up Object",
+    "category": "adl",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 28,
+    "code": "adl_change_pose",
+    "name_th": "เปลี่ยนท่าทางปกติ",
+    "name_en": "Normal Posture Change",
+    "category": "adl",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 11,
+    "code": "custom_1782373044",
+    "name_th": "ทดสอบอุปกรณ์",
+    "name_en": "Testing the device",
+    "category": "other",
+    "created_at": "2026-06-25 14:37:24"
+  },
+  {
+    "id": 29,
+    "code": "impact_forward",
+    "name_th": "เกือบล้มไปข้างหน้าแต่ทรงตัวได้",
+    "name_en": "Near Forward Fall",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 30,
+    "code": "impact_backward",
+    "name_th": "เกือบล้มไปข้างหลังแต่ทรงตัวได้",
+    "name_en": "Near Backward Fall",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 31,
+    "code": "impact_left",
+    "name_th": "เกือบล้มด้านซ้ายแต่ทรงตัวได้",
+    "name_en": "Near Left Fall",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 32,
+    "code": "impact_right",
+    "name_th": "เกือบล้มด้านขวาแต่ทรงตัวได้",
+    "name_en": "Near Right Fall",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 33,
+    "code": "impact_stumble",
+    "name_th": "สะดุดแต่ไม่ล้ม",
+    "name_en": "Stumble Without Fall",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 34,
+    "code": "impact_hard_sit",
+    "name_th": "นั่งลงแรงแต่ไม่ล้ม",
+    "name_en": "Hard Sit Without Fall",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 35,
+    "code": "impact_stop",
+    "name_th": "หยุดเดิน/หยุดวิ่งกะทันหัน",
+    "name_en": "Sudden Stop",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 36,
+    "code": "impact_device",
+    "name_th": "อุปกรณ์ถูกกระแทกแต่คนไม่ได้ล้ม",
+    "name_en": "Device Impact Without Fall",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 37,
+    "code": "exclude_device",
+    "name_th": "ทดสอบอุปกรณ์",
+    "name_en": "Device Test",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 38,
+    "code": "exclude_wifi",
+    "name_th": "ทดสอบ Wi-Fi / Server",
+    "name_en": "Wi-Fi / Server Test",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 39,
+    "code": "exclude_sensor",
+    "name_th": "ทดสอบเซนเซอร์",
+    "name_en": "Sensor Test",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  },
+  {
+    "id": 40,
+    "code": "exclude_error",
+    "name_th": "ข้อมูลผิดพลาด",
+    "name_en": "Invalid Data",
+    "category": "other",
+    "created_at": "2026-06-26 02:33:48"
+  }
+]
