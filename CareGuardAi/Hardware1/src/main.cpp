@@ -77,6 +77,7 @@ struct FallRecord {
   double lat;
   double lng;
   bool gps_valid;
+  bool is_wifi_loc;     // True เมื่อพิกัดมาจาก Wi-Fi Geolocation
   bool assisted;
   unsigned long assisted_at;
   bool is_button_event; // True เมื่อเป็นการกดปุ่มยืนยัน D18
@@ -115,15 +116,29 @@ float currentHdop = 99.0;
 bool gpsValid = false;
 unsigned long lastGpsFix = 0;
 
-// Indoor / Hotspot Fallback Coordinates (เมื่ออยู่ในอาคารหรือเชื่อม Hotspot มือถือ)
+// Hybrid Positioning: Wi-Fi Geolocation Coordinates (เมื่ออยู่ในอาคารหรือไม่มีสัญญาณดาวเทียม)
 double indoorLat = 0.0;
 double indoorLng = 0.0;
 bool hasIndoorFix = false;
 
-// Step Counting (GPS + IMU)
+// Wi-Fi Access Points Scanning (Background & Multi-AP Geolocation)
+struct WifiApInfo {
+  char bssid[20];
+  char ssid[34];
+  int32_t rssi;
+};
+#define MAX_SCANNED_APS 6
+WifiApInfo scannedAps[MAX_SCANNED_APS];
+int scannedApCount = 0;
+unsigned long lastWifiScanTime = 0;
+bool isWifiScanning = false;
+
+// Step Counting (MPU-6050 Pedometer + GPS Speed)
 int totalSteps = 0;
 float totalWalkDistance = 0; // เมตร
 float lastSpeed = 0;
+bool stepPeakDetected = false;
+unsigned long lastStepTime = 0;
 
 // Timing Configuration
 const unsigned long GPS_SEND_INTERVAL =
@@ -153,7 +168,9 @@ void handleButton();
 void onButtonPressed();
 void readGPS();
 void readIMU();
+void detectStep(float ax, float ay, float az);
 void updateSteps();
+void updateWifiScan(unsigned long now);
 bool checkForFall(float &confidenceOut, const char *&fallTypeOut,
                   float &peakAccX, float &peakAccY, float &peakAccZ,
                   float &peakMagG);
@@ -189,9 +206,9 @@ void setup() {
   delay(400);
 
   Serial.println("\n========================================================");
-  Serial.println("  CareGuard AI - FreeRTOS Dual-Core Architecture (v10.0)");
-  Serial.println("  Core 1: IMU 50Hz TinyML Fall Detection (Zero Blocking)");
-  Serial.println("  Core 0: GPS UART Streaming + Web Sync + Telegram Bot");
+  Serial.println("  CareGuard AI - FreeRTOS Dual-Core Architecture (v11.0)");
+  Serial.println("  Core 1: IMU 50Hz TinyML Fall Detection + Pedometer");
+  Serial.println("  Core 0: Hybrid GPS + Wi-Fi Geolocation + Web Sync + Telegram");
   Serial.println("========================================================\n");
 
   setupBuzzer();
@@ -200,6 +217,19 @@ void setup() {
   preferences.begin("falldetect", false);
   offlinePrefs.begin("fall_offline", false);
   loadOfflineQueueFromFlash();
+
+  // โหลดพิกัดฐานล่าสุด (Wi-Fi Base / Last Known Position) จาก Flash
+  double savedLat = preferences.getDouble("home_lat", 0.0);
+  double savedLng = preferences.getDouble("home_lng", 0.0);
+  if (savedLat != 0.0 && savedLng != 0.0) {
+    indoorLat = savedLat;
+    indoorLng = savedLng;
+    hasIndoorFix = true;
+    currentLat = savedLat;
+    currentLng = savedLng;
+    Serial.printf("[Location] โหลดพิกัดฐานล่าสุดจาก Flash: %.6f, %.6f (Wi-Fi Geolocation Base)\n",
+                  savedLat, savedLng);
+  }
 
   setupIMU();
   fallDetector.begin();
@@ -296,6 +326,9 @@ void netGpsTask(void *pvParameters) {
 
     unsigned long now = millis();
 
+    // จัดการสแกน Wi-Fi APs รอบตัวในเบื้องหลัง (Background Async Scan)
+    updateWifiScan(now);
+
     // 1. ตรวจสอบคิวเหตุการณ์การล้มจาก Core 1 เพื่อส่งแจ้งเตือน
     FallRecord eventRec;
     if (xQueueReceive(fallEventQueue, &eventRec, 0) == pdTRUE) {
@@ -307,10 +340,12 @@ void netGpsTask(void *pvParameters) {
           doc["event_type"] = "fall_assisted";
           doc["status"] = "assisted_confirmed";
           doc["message"] = "ผู้ใช้งานได้รับการช่วยเหลือเรียบร้อยแล้ว (กดปุ่ม D18)";
-          if (eventRec.gps_valid) {
+          doc["location_source"] = eventRec.gps_valid ? "gps" : "wifi";
+          if (eventRec.lat != 0.0 && eventRec.lng != 0.0) {
             doc["lat"] = eventRec.lat;
             doc["lng"] = eventRec.lng;
           }
+          appendWifiAps(doc);
           String json;
           serializeJson(doc, json);
           sendToUrl(fallsUrl, json, true);
@@ -327,7 +362,8 @@ void netGpsTask(void *pvParameters) {
         // ส่งเหตุการณ์การล้ม
         bool sent = sendFallAlert(eventRec);
         if (sent) {
-          Serial.println("[Net Task] ส่ง Fall Alert (GPS) ไปยัง Server สำเร็จ");
+          Serial.printf("[Net Task] ส่ง Fall Alert (%s) ไปยัง Server สำเร็จ\n",
+                        eventRec.gps_valid ? "🛰️ GPS ดาวเทียม" : "📶 Wi-Fi Geolocation");
         } else {
           Serial.println("[Net Task] ส่งไม่สำเร็จ เก็บเข้าคิวออฟไลน์");
           saveOfflineFallEvent(eventRec);
@@ -431,8 +467,60 @@ void readGPS() {
     lastGpsFix = millis();
   } else if (millis() - lastGpsFix > 6000) {
     gpsValid = false;
+    // เมื่อสัญญาณดาวเทียมหลุด ให้ใช้พิกัดจาก Wi-Fi Geolocation ฐานในอาคาร
+    if (hasIndoorFix && indoorLat != 0.0 && indoorLng != 0.0) {
+      currentLat = indoorLat;
+      currentLng = indoorLng;
+    }
   }
   portEXIT_CRITICAL(&gpsMux);
+}
+
+// ==================== คำนวณก้าวเดินจาก MPU-6050 (Pedometer ในและนอกอาคาร) ====================
+void detectStep(float ax, float ay, float az) {
+  float mag = sqrt(ax * ax + ay * ay + az * az);
+  unsigned long now = millis();
+  if (mag > 12.2f && !stepPeakDetected && (now - lastStepTime > 320)) {
+    stepPeakDetected = true;
+    lastStepTime = now;
+    totalSteps++;
+    totalWalkDistance += 0.70f;
+  } else if (mag < 10.2f) {
+    stepPeakDetected = false;
+  }
+}
+
+// ==================== สแกน Wi-Fi APs รอบตัวในเบื้องหลัง (Background Async Scan) ====================
+void updateWifiScan(unsigned long now) {
+  if (WiFi.status() != WL_CONNECTED)
+    return;
+
+  if (isWifiScanning) {
+    int16_t n = WiFi.scanComplete();
+    if (n >= 0) {
+      scannedApCount = 0;
+      for (int i = 0; i < n && scannedApCount < MAX_SCANNED_APS; i++) {
+        String b = WiFi.BSSIDstr(i);
+        String s = WiFi.SSID(i);
+        int32_t r = WiFi.RSSI(i);
+        if (b.length() > 0) {
+          strncpy(scannedAps[scannedApCount].bssid, b.c_str(), sizeof(scannedAps[0].bssid) - 1);
+          strncpy(scannedAps[scannedApCount].ssid, s.c_str(), sizeof(scannedAps[0].ssid) - 1);
+          scannedAps[scannedApCount].rssi = r;
+          scannedApCount++;
+        }
+      }
+      WiFi.scanDelete();
+      isWifiScanning = false;
+      lastWifiScanTime = now;
+    } else if (n == -2) {
+      isWifiScanning = false;
+    }
+  } else if (now - lastWifiScanTime >= 15000) {
+    lastWifiScanTime = now;
+    WiFi.scanNetworks(true, false);
+    isWifiScanning = true;
+  }
 }
 
 // ==================== คำนวณก้าวเดินจาก GPS ====================
@@ -445,7 +533,7 @@ void updateSteps() {
   if (!valid)
     return;
 
-  if (spd > 1.2 && spd < 15.0) {
+  if (spd > 1.2 && spd < 15.0 && (millis() - lastStepTime > 1500)) {
     float distanceThisSec = (spd * 1000.0) / 3600.0;
     totalWalkDistance += distanceThisSec;
     totalSteps += (int)(distanceThisSec / 0.65);
@@ -495,9 +583,20 @@ void onButtonPressed() {
   memset(&btnRec, 0, sizeof(FallRecord));
   btnRec.is_button_event = true;
   portENTER_CRITICAL(&gpsMux);
-  btnRec.lat = currentLat;
-  btnRec.lng = currentLng;
   btnRec.gps_valid = gpsValid;
+  if (gpsValid && currentLat != 0.0 && currentLng != 0.0) {
+    btnRec.lat = currentLat;
+    btnRec.lng = currentLng;
+    btnRec.is_wifi_loc = false;
+  } else if (hasIndoorFix && indoorLat != 0.0 && indoorLng != 0.0) {
+    btnRec.lat = indoorLat;
+    btnRec.lng = indoorLng;
+    btnRec.is_wifi_loc = true;
+  } else {
+    btnRec.lat = currentLat;
+    btnRec.lng = currentLng;
+    btnRec.is_wifi_loc = true;
+  }
   portEXIT_CRITICAL(&gpsMux);
 
   if (fallEventQueue != NULL) {
@@ -532,9 +631,24 @@ void handleFallDetected(float accX, float accY, float accZ, float severity,
            fallDetector.getFallTypeNameThai(fallType));
 
   portENTER_CRITICAL(&gpsMux);
-  rec.lat = currentLat;
-  rec.lng = currentLng;
   rec.gps_valid = gpsValid;
+  if (gpsValid && currentLat != 0.0 && currentLng != 0.0) {
+    rec.lat = currentLat;
+    rec.lng = currentLng;
+    rec.is_wifi_loc = false;
+  } else if (hasIndoorFix && indoorLat != 0.0 && indoorLng != 0.0) {
+    rec.lat = indoorLat;
+    rec.lng = indoorLng;
+    rec.is_wifi_loc = true;
+  } else if (currentLat != 0.0 && currentLng != 0.0) {
+    rec.lat = currentLat;
+    rec.lng = currentLng;
+    rec.is_wifi_loc = true;
+  } else {
+    rec.lat = 0.0;
+    rec.lng = 0.0;
+    rec.is_wifi_loc = false;
+  }
   portEXIT_CRITICAL(&gpsMux);
 
   rec.assisted = false;
@@ -542,22 +656,31 @@ void handleFallDetected(float accX, float accY, float accZ, float severity,
   rec.is_button_event = false;
 
   // ส่งเข้า Queue เพื่อให้ Core 0 จัดการส่ง HTTP / Telegram และบันทึก Flash
-  // (ป้องกันเก็บบันทึกซ้ำซ้อน)
   if (fallEventQueue != NULL) {
     if (xQueueSend(fallEventQueue, &rec, 0) != pdTRUE) {
-      // กรณี Queue เต็มเท่านั้น จึงบันทึกลง Flash ทันที
       saveOfflineFallEvent(rec);
     }
   }
 }
 
-// ==================== รวบรวม Wi-Fi APs ====================
+// ==================== รวบรวม Wi-Fi APs (Multi-AP สำหรับ Geolocation) ====================
 void appendWifiAps(JsonDocument &doc) {
   JsonArray aps = doc.createNestedArray("wifi_aps");
+  // 1. AP หลักที่เชื่อมต่ออยู่
   JsonObject ap0 = aps.createNestedObject();
   ap0["bssid"] = WiFi.BSSIDstr();
   ap0["rssi"] = WiFi.RSSI();
   ap0["ssid"] = WiFi.SSID();
+
+  // 2. APs รอบตัวที่สแกนพบ (ไม่ซ้ำกับ AP หลัก)
+  for (int i = 0; i < scannedApCount; i++) {
+    if (strcasecmp(scannedAps[i].bssid, WiFi.BSSIDstr().c_str()) != 0) {
+      JsonObject ap = aps.createNestedObject();
+      ap["bssid"] = scannedAps[i].bssid;
+      ap["rssi"] = scannedAps[i].rssi;
+      ap["ssid"] = scannedAps[i].ssid;
+    }
+  }
 }
 
 // ==================== ส่ง Fall Alert ไปยัง Server (Core 0) ====================
@@ -583,24 +706,26 @@ bool sendFallAlert(const FallRecord &rec) {
   doc["assisted"] = rec.assisted ? 1 : 0;
   doc["offline_recorded"] = 0;
 
+  // ส่งข้อมูล Wi-Fi เสมอสำหรับทำ Geolocation และบันทึกตำแหน่ง Router
+  doc["wifi_ssid"] = WiFi.SSID();
+  doc["wifi_bssid"] = WiFi.BSSIDstr();
+  doc["wifi_rssi"] = WiFi.RSSI();
+  appendWifiAps(doc);
+
   if (rec.lat != 0.0 && rec.lng != 0.0 && rec.gps_valid) {
     doc["location_source"] = "gps";
     doc["lat"] = rec.lat;
     doc["lng"] = rec.lng;
+  } else if (rec.lat != 0.0 && rec.lng != 0.0) {
+    doc["location_source"] = "wifi";
+    doc["lat"] = rec.lat;
+    doc["lng"] = rec.lng;
   } else if (hasIndoorFix && indoorLat != 0.0 && indoorLng != 0.0) {
-    doc["location_source"] = "hotspot";
+    doc["location_source"] = "wifi";
     doc["lat"] = indoorLat;
     doc["lng"] = indoorLng;
-    doc["wifi_ssid"] = WiFi.SSID();
-    doc["wifi_bssid"] = WiFi.BSSIDstr();
-    doc["wifi_rssi"] = WiFi.RSSI();
-    appendWifiAps(doc);
   } else {
     doc["location_source"] = "wifi";
-    doc["wifi_ssid"] = WiFi.SSID();
-    doc["wifi_bssid"] = WiFi.BSSIDstr();
-    doc["wifi_rssi"] = WiFi.RSSI();
-    appendWifiAps(doc);
   }
 
   String json;
@@ -608,8 +733,7 @@ bool sendFallAlert(const FallRecord &rec) {
   return sendToUrl(fallsUrl, json, true);
 }
 
-// ==================== ซิงค์ข้อมูลพิกัดอุปกรณ์ขึ้น Server ตลอดเวลา (Core 0)
-// ====================
+// ==================== ซิงค์ข้อมูลพิกัดอุปกรณ์ขึ้น Server ตลอดเวลา (Hybrid GPS/WiFi) ====================
 void sendGPSData() {
   StaticJsonDocument<1024> doc;
   doc["device_id"] = "ESP32_001";
@@ -633,19 +757,33 @@ void sendGPSData() {
   doc["satellites"] = sats;
 
   if (valid && lat != 0.0 && lng != 0.0) {
+    // โหมด 1: GPS จริงจากดาวเทียม (Outdoor)
     doc["location_source"] = "gps";
     doc["lat"] = lat;
     doc["lng"] = lng;
     doc["speed_kmh"] = spd;
     doc["altitude_m"] = alt;
     doc["hdop"] = hd;
-    Serial.printf("[GPS Sync 1s] 🛰 ซิงค์พิกัด: %.6f, %.6f | ดาวเทียม: %d ดวง\n", lat,
-                  lng, sats);
-  } else {
-    doc["location_source"] = "wifi";
-    doc["speed_kmh"] = 0.0;
-    doc["hdop"] = 25.0;
     appendWifiAps(doc);
+
+    Serial.printf("[Hybrid Sync] 🛰️ GPS ดาวเทียม: %.6f, %.6f (ดาวเทียม: %d ดวง, HDOP: %.1f)\n",
+                  lat, lng, sats, hd);
+  } else {
+    // โหมด 2: Wi-Fi Geolocation (Indoor / ไม่พบดาวเทียม)
+    doc["location_source"] = "wifi";
+    if (hasIndoorFix && indoorLat != 0.0 && indoorLng != 0.0) {
+      doc["lat"] = indoorLat;
+      doc["lng"] = indoorLng;
+    } else if (lat != 0.0 && lng != 0.0) {
+      doc["lat"] = lat;
+      doc["lng"] = lng;
+    }
+    doc["speed_kmh"] = 0.0;
+    doc["hdop"] = 25.0; // ความแม่นยำประมาณการสำหรับ Wi-Fi ในอาคาร
+    appendWifiAps(doc);
+
+    Serial.printf("[Hybrid Sync] 📶 Wi-Fi Geolocation: SSID: %s (BSSID: %s, RSSI: %d dBm)\n",
+                  WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
   }
 
   String json;
@@ -671,6 +809,18 @@ void sendGPSData() {
           indoorLat = l;
           indoorLng = g;
           hasIndoorFix = true;
+          portENTER_CRITICAL(&gpsMux);
+          if (!gpsValid) {
+            currentLat = l;
+            currentLng = g;
+          }
+          portEXIT_CRITICAL(&gpsMux);
+          preferences.putDouble("home_lat", l);
+          preferences.putDouble("home_lng", g);
+          if (!valid) {
+            Serial.printf("[Hybrid Sync] 📍 อัปเดตพิกัดจาก Wi-Fi Geolocation สำเร็จ: %.6f, %.6f (%s)\n",
+                          l, g, src);
+          }
         }
       }
     }
@@ -691,6 +841,9 @@ void readIMU() {
   gyroBuffer[bufferIndex][0] = g.gyro.x;
   gyroBuffer[bufferIndex][1] = g.gyro.y;
   gyroBuffer[bufferIndex][2] = g.gyro.z;
+
+  // นับก้าวเดินจากแรงกระแทกความเร่งแกน IMU
+  detectStep(a.acceleration.x, a.acceleration.y, a.acceleration.z);
 
   bufferIndex = (bufferIndex + 1) % WINDOW_SIZE;
   if (bufferIndex == 0)
@@ -852,14 +1005,16 @@ void syncOfflineFallEvents() {
                                       : 0;
 
     if (rec.lat != 0.0 && rec.lng != 0.0) {
-      doc["location_source"] = "gps";
+      doc["location_source"] = rec.gps_valid ? "gps" : "wifi";
       doc["lat"] = rec.lat;
       doc["lng"] = rec.lng;
     } else {
       doc["location_source"] = "wifi";
-      doc["wifi_ssid"] = WiFi.SSID();
-      doc["wifi_bssid"] = WiFi.BSSIDstr();
     }
+    doc["wifi_ssid"] = WiFi.SSID();
+    doc["wifi_bssid"] = WiFi.BSSIDstr();
+    doc["wifi_rssi"] = WiFi.RSSI();
+    appendWifiAps(doc);
 
     String json;
     serializeJson(doc, json);
@@ -1004,7 +1159,7 @@ void sendTelegramFallAlert(const FallRecord &rec) {
   float gForce = mag / 9.80665f;
 
   String msg = "🚨 แจ้งเตือน: ตรวจพบการล้มฉุกเฉิน!\n";
-  msg += "👤 อุปกรณ์: CareGuardH1\n";
+  msg += "👤 อุปกรณ์: CareGuardH1 (Hybrid GPS/Wi-Fi)\n";
   msg += "⚠️ รูปแบบการล้ม: " + String(rec.fall_type_name) + "\n";
   msg += "🎯 ความมั่นใจ AI: " + String((int)(rec.confidence * 100)) + "%\n";
   msg += "💥 ระดับความรุนแรง: " +
@@ -1017,12 +1172,15 @@ void sendTelegramFallAlert(const FallRecord &rec) {
   if (rec.lat != 0.0 && rec.lng != 0.0 && !isnan(rec.lat) && !isnan(rec.lng) &&
       rec.gps_valid) {
     msg += "📍 พิกัด: https://maps.google.com/?q=" + String(rec.lat, 6) + "," +
-           String(rec.lng, 6) + " (🛰️ GPS ดาวเทียม)";
+           String(rec.lng, 6) + " (🛰️ GPS ดาวเทียมจริง)";
+  } else if (rec.lat != 0.0 && rec.lng != 0.0 && !isnan(rec.lat) && !isnan(rec.lng)) {
+    msg += "📍 พิกัด: https://maps.google.com/?q=" + String(rec.lat, 6) + "," +
+           String(rec.lng, 6) + " (📶 Wi-Fi Geolocation ในอาคาร)";
   } else if (hasIndoorFix && indoorLat != 0.0 && indoorLng != 0.0) {
     msg += "📍 พิกัด: https://maps.google.com/?q=" + String(indoorLat, 6) + "," +
-           String(indoorLng, 6) + " (📱 GPS มือถือ Hotspot / Wi-Fi ในอาคาร)";
+           String(indoorLng, 6) + " (📶 Wi-Fi Geolocation ในอาคาร)";
   } else {
-    msg += "📍 พิกัด: 🛰️ กำลังค้นหาสัญญาณดาวเทียม GPS...";
+    msg += "📍 พิกัด: 🛰️ กำลังค้นหาสัญญาณดาวเทียม GPS / Wi-Fi...";
   }
 
   bot.sendMessage(target, msg, "");
