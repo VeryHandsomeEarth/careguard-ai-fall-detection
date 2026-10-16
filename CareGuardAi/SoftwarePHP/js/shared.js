@@ -781,7 +781,7 @@ async function saveNewDevice(e) {
     return;
   }
 
-  // ใช้ฮาร์ดแวร์รุ่นเดียว (รวม GPS NEO-7M + Wi-Fi Geolocation) จึงไม่ต้องเลือกประเภทอีกต่อไป
+  // ใช้ฮาร์ดแวร์รุ่นเดียว (รวม GPS NEO-7M + Wi-Fi Geolocation)
   const devId = 'ESP32_001';
 
   try {
