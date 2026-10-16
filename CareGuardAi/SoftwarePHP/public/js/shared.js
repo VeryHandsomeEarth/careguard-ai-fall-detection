@@ -746,17 +746,14 @@ async function loadUserDevices() {
         <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
           <div>
             <div style="font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
-              <span>${dev.device_type === 'hw1_gps' ? '🛰️' : '📶'}</span>
+              <span>📡</span>
               <span>${escapeHtml(dev.device_name || 'CareGuard Device')}</span>
               ${dev.is_primary == 1 ? '<span class="pill pill-green" style="font-size:10px;padding:2px 6px;">อุปกรณ์หลัก</span>' : ''}
             </div>
             <div style="font-size:12px;color:var(--accent);font-family:var(--font-mono);margin-top:2px;">
               MAC: ${dev.mac_address}
             </div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
-              โหมด: ${dev.device_type === 'hw1_gps' ? 'Hardware 1 (GPS NEO-7M)' : dev.device_type === 'hw2_wifi' ? 'Hardware 2 (Wi-Fi Geolocation)' : 'ตรวจจับอัตโนมัติ'}
-              ${dev.username ? ` • ผู้ใช้: ${escapeHtml(dev.username)}` : ''}
-            </div>
+            ${dev.username ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">ผู้ใช้: ${escapeHtml(dev.username)}</div>` : ''}
           </div>
           <div>
             <button class="btn btn-outline btn-sm" onclick="deleteDevice(${dev.id})" style="color:var(--danger);border-color:var(--danger);padding:4px 8px;" title="ยกเลิกการผูกอุปกรณ์">
@@ -777,7 +774,6 @@ async function saveNewDevice(e) {
   if (e) e.preventDefault();
   const mac = document.getElementById('devMacAddress').value.trim();
   const name = document.getElementById('devName').value.trim() || 'CareGuard ESP32';
-  const type = document.getElementById('devType').value;
   const isPrimary = document.getElementById('devIsPrimary').checked ? 1 : 0;
 
   if (!mac || !/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(mac)) {
@@ -785,10 +781,8 @@ async function saveNewDevice(e) {
     return;
   }
 
-  let devId = 'ESP32_001';
-  if (type === 'hw2_wifi' || name.toLowerCase().includes('hw2') || name.toLowerCase().includes('hardware2') || name.toLowerCase().includes('hardware 2')) {
-    devId = 'ESP32_HW2';
-  }
+  // ใช้ฮาร์ดแวร์รุ่นเดียว (รวม GPS NEO-7M + Wi-Fi Geolocation) จึงไม่ต้องเลือกประเภทอีกต่อไป
+  const devId = 'ESP32_001';
 
   try {
     const res = await fetch(BASE + '/api/devices.php', {
@@ -797,7 +791,7 @@ async function saveNewDevice(e) {
       body: JSON.stringify({
         mac_address: mac,
         device_name: name,
-        device_type: type,
+        device_type: 'auto',
         device_id: devId,
         is_primary: isPrimary
       })
@@ -1324,21 +1318,11 @@ function injectSharedComponents() {
                   </div>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center;">
-                  <div class="form-group" style="margin-bottom:0;">
-                    <label class="form-label">ประเภทฮาร์ดแวร์</label>
-                    <select id="devType" class="form-select">
-                      <option value="auto">ตรวจจับอัตโนมัติ (แนะนำ)</option>
-                      <option value="hw1_gps">Hardware 1: GPS NEO-7M (กลางแจ้ง)</option>
-                      <option value="hw2_wifi">Hardware 2: Wi-Fi Geolocation (ในบ้าน)</option>
-                    </select>
-                  </div>
-                  <div style="padding-top:18px;">
-                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text-primary);">
-                      <input type="checkbox" id="devIsPrimary" checked style="accent-color:var(--accent);">
-                      ตั้งเป็นอุปกรณ์หลักที่ใช้งาน
-                    </label>
-                  </div>
+                <div style="margin-top:4px;">
+                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text-primary);">
+                    <input type="checkbox" id="devIsPrimary" checked style="accent-color:var(--accent);">
+                    ตั้งเป็นอุปกรณ์หลักที่ใช้งาน
+                  </label>
                 </div>
 
                 <div style="margin-top:14px;text-align:right;">
