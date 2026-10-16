@@ -31,6 +31,8 @@ $stats = $pdo->query("
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CollectData — ระบบเก็บข้อมูลการทดลอง</title>
     <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="js/app.js"></script>
 </head>
 <body>
     <!-- Navbar -->
@@ -39,6 +41,15 @@ $stats = $pdo->query("
         <a href="index.php" class="active">ผู้ทดสอบ</a>
         <a href="cd_trial.php">ข้อมูลการทดลอง</a>
         <a href="devices.php">อุปกรณ์</a>
+        <div class="theme-switcher">
+            <label for="themeSelect">ธีม</label>
+            <select id="themeSelect" aria-label="เลือกธีมสี">
+                <option value="dark">เข้ม</option>
+                <option value="light">สว่าง</option>
+                <option value="forest">เขียว</option>
+                <option value="rose">ชมพู</option>
+            </select>
+        </div>
     </nav>
 
     <div class="container">
@@ -164,7 +175,7 @@ $stats = $pdo->query("
             if (data.success) {
                 location.reload();
             } else {
-                alert('ข้อผิดพลาด: ' + data.error);
+                showError('ข้อผิดพลาด: ' + data.error);
             }
         });
 

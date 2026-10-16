@@ -20,6 +20,8 @@ $devices = $pdo->query("
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>อุปกรณ์ — CollectData</title>
     <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="js/app.js"></script>
 </head>
 <body>
     <nav class="navbar">
@@ -27,6 +29,15 @@ $devices = $pdo->query("
         <a href="index.php">ผู้ทดสอบ</a>
         <a href="cd_trial.php">ข้อมูลการทดลอง</a>
         <a href="devices.php" class="active">อุปกรณ์</a>
+        <div class="theme-switcher">
+            <label for="themeSelect">ธีม</label>
+            <select id="themeSelect" aria-label="เลือกธีมสี">
+                <option value="dark">เข้ม</option>
+                <option value="light">สว่าง</option>
+                <option value="forest">เขียว</option>
+                <option value="rose">ชมพู</option>
+            </select>
+        </div>
     </nav>
 
     <div class="container">
@@ -67,7 +78,7 @@ $devices = $pdo->query("
                                     <td><span class="badge badge-recording"><?= $d['record_count'] ?></span></td>
                                     <td style="font-size:12px"><?= date('d/m/Y', strtotime($d['created_at'])) ?></td>
                                     <td>
-                                        <button class="btn btn-danger btn-sm" onclick="if(confirm('ลบอุปกรณ์นี้?'))deleteDevice(<?= $d['id'] ?>)">🗑️ ลบ</button>
+                                        <button class="btn btn-danger btn-sm" onclick="confirmDeleteDevice(<?= $d['id'] ?>)">🗑️ ลบ</button>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -143,15 +154,29 @@ $devices = $pdo->query("
             if (data.success) {
                 location.reload();
             } else {
-                alert('ข้อผิดพลาด: ' + data.error);
+                showError('ข้อผิดพลาด: ' + data.error);
             }
         });
+
+        async function confirmDeleteDevice(id) {
+            const confirmed = await confirmAction({
+                title: 'ลบอุปกรณ์นี้?',
+                text: 'ข้อมูลอุปกรณ์จะถูกลบออกจากระบบ',
+                confirmButtonText: 'ลบ'
+            });
+            if (confirmed) deleteDevice(id);
+        }
 
         async function deleteDevice(id) {
             const form = new FormData();
             form.append('id', id);
-            await fetch('api/actions.php?action=delete_device', { method: 'POST', body: form });
-            location.reload();
+            const res = await fetch('api/actions.php?action=delete_device', { method: 'POST', body: form });
+            const data = await res.json();
+            if (data.success) {
+                location.reload();
+            } else {
+                showError('ข้อผิดพลาด: ' + data.error);
+            }
         }
 
         document.querySelectorAll('.modal-overlay').forEach(el => {

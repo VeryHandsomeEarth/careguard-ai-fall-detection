@@ -79,6 +79,8 @@ $records = $stmt->fetchAll();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ข้อมูลการทดลอง — CollectData</title>
     <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="js/app.js"></script>
 </head>
 <body>
     <nav class="navbar">
@@ -86,6 +88,15 @@ $records = $stmt->fetchAll();
         <a href="index.php">ผู้ทดสอบ</a>
         <a href="cd_trial.php" class="active">ข้อมูลการทดลอง</a>
         <a href="devices.php">อุปกรณ์</a>
+        <div class="theme-switcher">
+            <label for="themeSelect">ธีม</label>
+            <select id="themeSelect" aria-label="เลือกธีมสี">
+                <option value="dark">เข้ม</option>
+                <option value="light">สว่าง</option>
+                <option value="forest">เขียว</option>
+                <option value="rose">ชมพู</option>
+            </select>
+        </div>
     </nav>
 
     <div class="container">
@@ -214,15 +225,24 @@ $records = $stmt->fetchAll();
                                         </span>
                                     </td>
                                     <td>
-                                        <span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">
-                                            <?= $r['status'] == 'completed' ? 'เสร็จสิ้น' : ($r['status'] == 'recording' ? 'กำลังบันทึก' : 'ยกเลิก') ?>
-                                        </span>
+                                        <?php
+                                        $pts = intval($r['data_points']);
+                                        if ($r['status'] === 'recording') {
+                                            echo '<span class="badge badge-recording">⏳ รอ ESP32 ส่งข้อมูล...</span>';
+                                        } elseif ($r['status'] === 'completed' && $pts > 0) {
+                                            echo '<span class="badge badge-adl">✔ เสร็จสิ้น</span>';
+                                        } elseif ($r['status'] === 'cancelled') {
+                                            echo '<span class="badge badge-fall">✘ ยกเลิก</span>';
+                                        } else {
+                                            echo '<span class="badge badge-other">⚪ รอส่งคำสั่ง</span>';
+                                        }
+                                        ?>
                                     </td>
                                     <td style="font-size:12px; color:var(--text-secondary);"><?= date('d/m/Y H:i', strtotime($r['created_at'])) ?></td>
                                     <td>
                                         <div style="display: flex; gap: 8px;">
                                             <a href="record.php?id=<?= $r['id'] ?>" class="btn btn-primary btn-sm">📊 ดูกราฟ</a>
-                                            <button class="btn btn-danger btn-sm" onclick="if(confirm('คุณต้องการลบบันทึกการทดลองนี้หรือไม่? (ข้อมูลดิบจะถูกลบทั้งหมด)')) deleteRecord(<?= $r['id'] ?>)">🗑️ ลบ</button>
+                                            <button class="btn btn-danger btn-sm" onclick="confirmDeleteRecord(<?= $r['id'] ?>)">🗑️ ลบ</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -277,6 +297,15 @@ $records = $stmt->fetchAll();
             window.location.href = 'api/actions.php?action=export_records&' + params;
         }
 
+        async function confirmDeleteRecord(id) {
+            const confirmed = await confirmAction({
+                title: 'ลบบันทึกการทดลองนี้?',
+                text: 'ข้อมูลดิบทั้งหมดของบันทึกนี้จะถูกลบด้วย',
+                confirmButtonText: 'ลบ'
+            });
+            if (confirmed) deleteRecord(id);
+        }
+
         async function deleteRecord(id) {
             const form = new FormData();
             form.append('id', id);
@@ -285,7 +314,7 @@ $records = $stmt->fetchAll();
             if (data.success) {
                 location.reload();
             } else {
-                alert('ข้อผิดพลาด: ' + data.error);
+                showError('ข้อผิดพลาด: ' + data.error);
             }
         }
 

@@ -142,8 +142,9 @@ try {
 <head>
     <meta charset="UTF-8">
     <title>Setup — CollectData</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap">
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 40px; }
+        body { font-family: 'Noto Sans Thai', 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 40px; }
         .container { max-width: 600px; margin: 0 auto; background: #16213e; padding: 30px; border-radius: 12px; }
         h1 { color: #00d2ff; }
         .msg { padding: 8px 0; font-size: 15px; }

@@ -69,20 +69,33 @@ try {
         // ==================== บันทึกการล้ม ====================
         case 'add_record':
             $trial_id = !empty($_POST['trial_id']) ? intval($_POST['trial_id']) : null;
+            $device_id = intval($_POST['device_id'] ?? 0);
+            $req_status = $_POST['status'] ?? 'pending';
+            // หากเลือก 'pending' (รอส่งคำสั่ง) ให้เก็บเป็น 'completed' ที่มี 0 จุดข้อมูล เพื่อไม่ต้องแก้ ENUM ใน DB
+            $db_status = ($req_status === 'recording') ? 'recording' : (($req_status === 'cancelled') ? 'cancelled' : 'completed');
+
+            $pdo->beginTransaction();
+            if ($db_status === 'recording' && $device_id > 0) {
+                // เคลียร์รายการอื่นของอุปกรณ์เดียวกันที่ค้างสถานะ recording อยู่
+                $resetStmt = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE device_id = ? AND status = 'recording'");
+                $resetStmt->execute([$device_id]);
+            }
             $stmt = $pdo->prepare("
                 INSERT INTO cd_records (subject_id, device_id, fall_type_id, trial_id, trial_number, notes, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
                 intval($_POST['subject_id'] ?? 0),
-                intval($_POST['device_id'] ?? 0),
+                $device_id,
                 intval($_POST['fall_type_id'] ?? 0),
                 $trial_id,
                 intval($_POST['trial_number'] ?? 1),
                 $_POST['notes'] ?? '',
-                $_POST['status'] ?? 'completed'
+                $db_status
             ]);
-            echo json_encode(['success' => true, 'id' => $pdo->lastInsertId()]);
+            $new_id = $pdo->lastInsertId();
+            $pdo->commit();
+            echo json_encode(['success' => true, 'id' => $new_id, 'status' => $db_status]);
             break;
 
         case 'delete_record':
@@ -98,6 +111,67 @@ try {
                 intval($_POST['id'] ?? 0)
             ]);
             echo json_encode(['success' => true]);
+            break;
+
+        case 'send_command':
+            $record_id = intval($_POST['id'] ?? ($_REQUEST['record_id'] ?? 0));
+            if ($record_id <= 0) {
+                echo json_encode(['success' => false, 'error' => 'Invalid record_id']);
+                break;
+            }
+            $recStmt = $pdo->prepare("SELECT id, device_id FROM cd_records WHERE id = ?");
+            $recStmt->execute([$record_id]);
+            $rec = $recStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$rec) {
+                echo json_encode(['success' => false, 'error' => 'ไม่พบรายการบันทึกที่ระบุ']);
+                break;
+            }
+            $pdo->beginTransaction();
+            // ยกเลิกสถานะรอรับข้อมูลของรายการอื่นที่ใช้ device เดียวกัน เพื่อไม่ให้คำสั่งชนกัน
+            $resetStmt = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE device_id = ? AND status = 'recording' AND id != ?");
+            $resetStmt->execute([$rec['device_id'], $record_id]);
+            // ล้างข้อมูลเซ็นเซอร์เก่าของรายการนี้ (กรณีส่งคำสั่งซ้ำ) เพื่อรอรับข้อมูลชุดใหม่จาก ESP32
+            $delData = $pdo->prepare("DELETE FROM cd_sensor_data WHERE record_id = ?");
+            $delData->execute([$record_id]);
+            // ตั้งสถานะรายการนี้เป็น recording (รอ ESP32 ส่งข้อมูลกลับมา)
+            $updStmt = $pdo->prepare("UPDATE cd_records SET status = 'recording' WHERE id = ?");
+            $updStmt->execute([$record_id]);
+            $pdo->commit();
+            echo json_encode(['success' => true, 'record_id' => $record_id, 'status' => 'recording']);
+            break;
+
+        case 'cancel_command':
+            $record_id = intval($_POST['id'] ?? ($_REQUEST['record_id'] ?? 0));
+            if ($record_id <= 0) {
+                echo json_encode(['success' => false, 'error' => 'Invalid record_id']);
+                break;
+            }
+            $stmt = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE id = ?");
+            $stmt->execute([$record_id]);
+            echo json_encode(['success' => true, 'record_id' => $record_id]);
+            break;
+
+        case 'check_recording_status':
+            $subject_id = intval($_REQUEST['subject_id'] ?? 0);
+            $finalize_id = intval($_REQUEST['finalize_id'] ?? 0);
+            if ($finalize_id > 0) {
+                // เปลี่ยนเป็นเสร็จสิ้นเฉพาะเมื่อมีข้อมูลจาก ESP32 ส่งเข้ามาแล้วเท่านั้น (data_points > 0)
+                $cntStmt = $pdo->prepare("SELECT COUNT(*) FROM cd_sensor_data WHERE record_id = ?");
+                $cntStmt->execute([$finalize_id]);
+                if ((int)$cntStmt->fetchColumn() > 0) {
+                    $finStmt = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE id = ?");
+                    $finStmt->execute([$finalize_id]);
+                }
+            }
+            $stmt = $pdo->prepare("
+                SELECT r.id, r.status, r.device_id, r.trial_number,
+                       (SELECT COUNT(*) FROM cd_sensor_data WHERE record_id = r.id) as data_points
+                FROM cd_records r
+                WHERE r.subject_id = ?
+                ORDER BY r.id DESC
+            ");
+            $stmt->execute([$subject_id]);
+            echo json_encode(['success' => true, 'records' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
             break;
 
         // ==================== ประเภทการล้ม ====================
@@ -321,7 +395,7 @@ try {
                 JOIN cd_devices d ON r.device_id = d.id
                 JOIN cd_fall_types ft ON r.fall_type_id = ft.id
                 WHERE d.mac_address = ? AND r.status = 'recording'
-                ORDER BY r.created_at DESC
+                ORDER BY r.id DESC
                 LIMIT 1
             ");
             $stmt->execute([$mac]);
@@ -330,13 +404,13 @@ try {
             if ($cmd) {
                 // กำหนดระยะเวลามาตรฐานอ้างอิงตามโปรโตคอล SisFall (Sucerquia et al., 2017 - PMC5298771)
                 $code = strtolower($cmd['activity_code']);
-                $duration_sec = 12; // ค่าเริ่มต้นสำหรับ ADL ทั่วไป (D07-D16, D18-D19 = 12 วินาที)
-                if ($cmd['category'] === 'fall') {
-                    $duration_sec = 15; // โปรโตคอลการล้ม SisFall (F01-F15 = 15 วินาที)
-                } elseif (in_array($code, ['d05', 'd06', 'd17', 'adl_stairs'])) {
-                    $duration_sec = 25; // ขึ้นลงบันได / ขึ้นลงรถ = 25 วินาที
+                $duration_sec = 12; // ค่าเริ่มต้นสำหรับ ADL ทั่วไป / Near-Fall / Test (12 วินาที)
+                if ($cmd['category'] === 'fall' || strpos($code, 'fall_') === 0) {
+                    $duration_sec = 15; // โปรโตคอลการล้ม SisFall (F01-F05 = 15 วินาที)
+                } elseif (in_array($code, ['d05', 'd06', 'd07', 'd08', 'd17', 'adl_stairs', 'adl_stairs_up', 'adl_stairs_down'])) {
+                    $duration_sec = 25; // ขึ้นลงบันได (D07, D08 = 25 วินาที)
                 } elseif (in_array($code, ['d01', 'd02', 'd03', 'd04', 'adl_walk', 'adl_jog'])) {
-                    $duration_sec = 15; // เดิน / วิ่งเหยาะ (15 วินาทีต่อรอบบันทึก)
+                    $duration_sec = 15; // เดิน / วิ่งเหยาะ (D03, D04 = 15 วินาที)
                 }
 
                 echo json_encode([

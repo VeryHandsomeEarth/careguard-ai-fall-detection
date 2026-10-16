@@ -23,6 +23,16 @@ $record->execute([$id]);
 $record = $record->fetch();
 if (!$record) { header('Location: index.php'); exit; }
 
+$codeLower = strtolower($record['fall_type_code'] ?? '');
+$durationSec = 12;
+if ($record['category'] === 'fall' || strpos($codeLower, 'fall_') === 0) {
+    $durationSec = 15;
+} elseif (in_array($codeLower, ['d05', 'd06', 'd07', 'd08', 'd17', 'adl_stairs', 'adl_stairs_up', 'adl_stairs_down'], true)) {
+    $durationSec = 25;
+} elseif (in_array($codeLower, ['d01', 'd02', 'd03', 'd04', 'adl_walk', 'adl_jog'], true)) {
+    $durationSec = 15;
+}
+
 // นับจุดข้อมูล
 $dataCount = $pdo->prepare("SELECT COUNT(*) as cnt FROM cd_sensor_data WHERE record_id = ?");
 $dataCount->execute([$id]);
@@ -43,8 +53,10 @@ $siblings = $siblings->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>บันทึก #<?= $id ?> — <?= htmlspecialchars($record['fall_type_name']) ?></title>
+    <title>บันทึก #<?= $id ?> — <?= htmlspecialchars($record['fall_type_name']) ?> (<?= $durationSec ?> วินาที)</title>
     <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="js/app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
@@ -53,6 +65,15 @@ $siblings = $siblings->fetchAll();
         <a href="index.php">ผู้ทดสอบ</a>
         <a href="cd_trial.php">ข้อมูลการทดลอง</a>
         <a href="devices.php">อุปกรณ์</a>
+        <div class="theme-switcher">
+            <label for="themeSelect">ธีม</label>
+            <select id="themeSelect" aria-label="เลือกธีมสี">
+                <option value="dark">เข้ม</option>
+                <option value="light">สว่าง</option>
+                <option value="forest">เขียว</option>
+                <option value="rose">ชมพู</option>
+            </select>
+        </div>
     </nav>
 
     <div class="container">
@@ -69,7 +90,7 @@ $siblings = $siblings->fetchAll();
                     <span class="badge badge-<?= $record['category'] ?>">
                         <?= $record['category']=='fall'?'การล้ม':($record['category']=='adl'?'ADL':'อื่นๆ') ?>
                     </span>
-                    <?= htmlspecialchars($record['fall_type_name']) ?> — รอบ #<?= $record['trial_number'] ?>
+                    <?= htmlspecialchars($record['fall_type_name']) ?> (<?= $durationSec ?> วินาที) — รอบ #<?= $record['trial_number'] ?>
                 </h2>
             </div>
             <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary)">
@@ -117,19 +138,19 @@ $siblings = $siblings->fetchAll();
         <?php else: ?>
             <!-- กราฟความเร่ง -->
             <div class="chart-container">
-                <h3>📊 ความเร่ง (Accelerometer) — แกน X, Y, Z</h3>
+                <h3 style="color:#000000">📊 ความเร่ง (Accelerometer) — แกน X, Y, Z, G</h3>
                 <canvas id="accelChart" height="200"></canvas>
             </div>
 
             <!-- กราฟไจโรสโคป -->
             <div class="chart-container">
-                <h3>🔄 ไจโรสโคป (Gyroscope) — แกน X, Y, Z</h3>
+                <h3 style="color:#000000">🔄 ไจโรสโคป (Gyroscope) — แกน X, Y, Z</h3>
                 <canvas id="gyroChart" height="200"></canvas>
             </div>
 
             <!-- กราฟขนาดเวกเตอร์ -->
             <div class="chart-container">
-                <h3>💠 ขนาดเวกเตอร์ (Magnitude)</h3>
+                <h3 style="color:#000000">💠 ขนาดเวกเตอร์ (Magnitude)</h3>
                 <canvas id="magChart" height="150"></canvas>
             </div>
 
@@ -144,28 +165,81 @@ $siblings = $siblings->fetchAll();
                         // แปลง timestamp เป็นวินาที (เริ่มจาก 0)
                         const t0 = d[0].timestamp_ms;
                         const labels = d.map(p => ((p.timestamp_ms - t0) / 1000).toFixed(3));
+                        const pointInterval = Math.max(1, Math.ceil(d.length / 24));
+                        const chartStyles = [
+                            { borderDash: [], pointStyle: 'circle' },
+                            { borderDash: [8, 4], pointStyle: 'rectRot' },
+                            { borderDash: [2, 4], pointStyle: 'triangle' },
+                            { borderDash: [10, 3, 2, 3], pointStyle: 'star' }
+                        ];
+                        const chartTextColor = '#000000';
+                        const chartFontFamily = "'Noto Sans Thai', 'Segoe UI', sans-serif";
+                        const chartLegendFont = { family: chartFontFamily, size: 11, weight: '700' };
+                        const chartTickFont = { family: chartFontFamily, size: 10, weight: '700' };
+
+                        Chart.defaults.color = chartTextColor;
+                        Chart.defaults.font.family = chartFontFamily;
+                        Chart.defaults.font.weight = '700';
+
+                        const makeDataset = (label, values, borderColor, styleIndex, extra = {}) => ({
+                            label,
+                            data: values,
+                            borderColor,
+                            backgroundColor: borderColor,
+                            pointBorderColor: borderColor,
+                            pointBackgroundColor: borderColor,
+                            borderDash: chartStyles[styleIndex].borderDash,
+                            pointStyle: chartStyles[styleIndex].pointStyle,
+                            pointRadius: ctx => ctx.dataIndex % pointInterval === 0 ? 3 : 0,
+                            pointHoverRadius: 5,
+                            pointHitRadius: 8,
+                            tension: 0.12,
+                            fill: false,
+                            ...extra
+                        });
 
                         const chartOptions = {
                             responsive: true,
                             animation: false,
                             interaction: { mode: 'index', intersect: false },
                             plugins: {
-                                legend: { labels: { color: '#a0a0b0', font: { size: 12 } } },
-                                tooltip: { enabled: true }
+                                legend: {
+                                    labels: {
+                                        color: chartTextColor,
+                                        font: chartLegendFont,
+                                        usePointStyle: true,
+                                        pointStyleWidth: 12
+                                    }
+                                },
+                                tooltip: {
+                                    enabled: true,
+                                    titleColor: chartTextColor,
+                                    bodyColor: chartTextColor,
+                                    footerColor: chartTextColor,
+                                    titleFont: chartLegendFont,
+                                    bodyFont: chartLegendFont,
+                                    footerFont: chartLegendFont
+                                }
                             },
                             scales: {
                                 x: {
-                                    ticks: { color: '#666', maxTicksLimit: 15, font: { size: 10 } },
+                                    ticks: { color: chartTextColor, maxTicksLimit: 15, font: chartTickFont },
                                     grid: { color: '#2a2a4a' },
-                                    title: { display: true, text: 'เวลา (วินาที)', color: '#888' }
+                                    title: { display: true, text: 'เวลา (วินาที)', color: chartTextColor, font: chartLegendFont }
                                 },
                                 y: {
-                                    ticks: { color: '#666', font: { size: 10 } },
+                                    ticks: { color: chartTextColor, font: chartTickFont },
                                     grid: { color: '#2a2a4a' }
                                 }
                             },
-                            elements: { point: { radius: 0 }, line: { borderWidth: 1.5 } }
+                            elements: { line: { borderWidth: 1.8 } }
                         };
+                        const gValues = d.map(p => {
+                            const ax = Number(p.accel_x);
+                            const ay = Number(p.accel_y);
+                            const az = Number(p.accel_z);
+                            return Math.sqrt(ax * ax + ay * ay + az * az) / 9.81;
+                        });
 
                         // กราฟความเร่ง
                         new Chart(document.getElementById('accelChart'), {
@@ -173,12 +247,13 @@ $siblings = $siblings->fetchAll();
                             data: {
                                 labels,
                                 datasets: [
-                                    { label: 'Accel X (m/s²)', data: d.map(p => p.accel_x), borderColor: '#ff6384', backgroundColor: 'rgba(255,99,132,0.1)', fill: false },
-                                    { label: 'Accel Y (m/s²)', data: d.map(p => p.accel_y), borderColor: '#36a2eb', backgroundColor: 'rgba(54,162,235,0.1)', fill: false },
-                                    { label: 'Accel Z (m/s²)', data: d.map(p => p.accel_z), borderColor: '#ffce56', backgroundColor: 'rgba(255,206,86,0.1)', fill: false }
+                                    makeDataset('Accel X (m/s²)', d.map(p => Number(p.accel_x)), '#ff6384', 0),
+                                    makeDataset('Accel Y (m/s²)', d.map(p => Number(p.accel_y)), '#36a2eb', 1),
+                                    makeDataset('Accel Z (m/s²)', d.map(p => Number(p.accel_z)), '#ffce56', 2),
+                                    makeDataset('G', gValues, '#000000', 3)
                                 ]
                             },
-                            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, title: { display: true, text: 'm/s²', color: '#888' } } } }
+                            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, title: { display: true, text: 'm/s² / G', color: chartTextColor, font: chartLegendFont } } } }
                         });
 
                         // กราฟไจโรสโคป
@@ -187,12 +262,12 @@ $siblings = $siblings->fetchAll();
                             data: {
                                 labels,
                                 datasets: [
-                                    { label: 'Gyro X (°/s)', data: d.map(p => p.gyro_x), borderColor: '#ff9f40', fill: false },
-                                    { label: 'Gyro Y (°/s)', data: d.map(p => p.gyro_y), borderColor: '#4bc0c0', fill: false },
-                                    { label: 'Gyro Z (°/s)', data: d.map(p => p.gyro_z), borderColor: '#9966ff', fill: false }
+                                    makeDataset('Gyro X (°/s)', d.map(p => Number(p.gyro_x)), '#ff9f40', 0),
+                                    makeDataset('Gyro Y (°/s)', d.map(p => Number(p.gyro_y)), '#4bc0c0', 1),
+                                    makeDataset('Gyro Z (°/s)', d.map(p => Number(p.gyro_z)), '#9966ff', 2)
                                 ]
                             },
-                            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, title: { display: true, text: '°/s', color: '#888' } } } }
+                            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, title: { display: true, text: '°/s', color: chartTextColor, font: chartLegendFont } } } }
                         });
 
                         // กราฟขนาดเวกเตอร์
@@ -204,16 +279,16 @@ $siblings = $siblings->fetchAll();
                             data: {
                                 labels,
                                 datasets: [
-                                    { label: 'Accel Magnitude', data: accelMag, borderColor: '#00e676', fill: false },
-                                    { label: 'Gyro Magnitude', data: gyroMag, borderColor: '#ea80fc', fill: false, yAxisID: 'y1' }
+                                    makeDataset('Accel Magnitude', accelMag, '#00e676', 0),
+                                    makeDataset('Gyro Magnitude', gyroMag, '#ea80fc', 1, { yAxisID: 'y1' })
                                 ]
                             },
                             options: {
                                 ...chartOptions,
                                 scales: {
                                     ...chartOptions.scales,
-                                    y: { ...chartOptions.scales.y, title: { display: true, text: 'm/s²', color: '#888' }, position: 'left' },
-                                    y1: { ticks: { color: '#666', font: { size: 10 } }, grid: { drawOnChartArea: false }, title: { display: true, text: '°/s', color: '#888' }, position: 'right' }
+                                    y: { ...chartOptions.scales.y, title: { display: true, text: 'm/s²', color: chartTextColor, font: chartLegendFont }, position: 'left' },
+                                    y1: { ticks: { color: chartTextColor, font: chartTickFont }, grid: { drawOnChartArea: false }, title: { display: true, text: '°/s', color: chartTextColor, font: chartLegendFont }, position: 'right' }
                                 }
                             }
                         });
