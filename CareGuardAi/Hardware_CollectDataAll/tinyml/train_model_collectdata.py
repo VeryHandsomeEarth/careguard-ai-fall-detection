@@ -1,13 +1,13 @@
 """
 สคริปต์เทรนโมเดล TinyML ตรวจจับการล้มจากชุดข้อมูล CollectData Dataset ล้วน (Pure CollectData Edition)
-สำหรับโฟลเดอร์: CareGuardAi/Hardware_CollectDatalAll
+สำหรับโฟลเดอร์: CareGuardAi/Hardware_CollectDataAll
 
 แหล่งข้อมูลที่ใช้เทรน:
   - ใช้ข้อมูลจากชุดเซนเซอร์ MPU-6050 ที่บันทึกจริงผ่านเว็บ CollectData_Web ล้วน 100%
   - ข้อมูลการล้ม (Fall / Label = 1): สกัดหน้าต่างรอบจุดกระแทกสูงสุด (Impact-centered Windows)
   - ข้อมูลกิจวัตรปกติ (ADL / Label = 0): สกัดจากไฟล์หมวด ADL และช่วงสภาวะปกติก่อน/หลังการล้ม
   - สกัด 18 คุณลักษณะทางสถิติและจลศาสตร์ (18 Features)
-  - เทรนโครงข่ายประสาทเทียม MLP (18 -> 32 -> 16 -> 1) และส่งออกเป็น C Header (src/fall_model.h)
+  - เทรนโครงข่ายประสาทเทียม MLP (18 -> 32 -> 16 -> 1) และส่งออกเป็น C Header (src/fall_model_collectdata.h)
 """
 
 import os
@@ -23,8 +23,9 @@ from sklearn.metrics import classification_report, confusion_matrix
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
 
-# รองรับทั้งชื่อโฟลเดอร์ CollectData_Web_Dataset และ CollectDatal_Dataset
+# รองรับทั้งชื่อโฟลเดอร์ CollectData_Dataset, CollectDatal_Dataset และ CollectData_Web_Dataset
 CANDIDATE_DIRS = [
+    os.path.join(PROJECT_ROOT, "dataset", "CollectData_Dataset", "sensor_records"),
     os.path.join(PROJECT_ROOT, "dataset", "CollectDatal_Dataset", "sensor_records"),
     os.path.join(PROJECT_ROOT, "dataset", "CollectData_Web_Dataset", "sensor_records"),
     r"D:\ssPro\CollectData_Web_Dataset\sensor_records",
@@ -36,7 +37,7 @@ for d in CANDIDATE_DIRS:
         COLLECTDATA_DIR = d
         break
 
-OUTPUT_MODEL_H = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "src", "fall_model.h"))
+OUTPUT_MODEL_H = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "src", "fall_model_collectdata.h"))
 
 WINDOW_SIZE = 50       # 50 ตัวอย่าง = 1 วินาที ที่ 50Hz
 NUM_AXES = 6           # Accel X,Y,Z + Gyro X,Y,Z
@@ -160,8 +161,8 @@ def export_mlp_to_c(clf, scaler, output_path):
         f" * สถาปัตยกรรม: MLP {n_layers} ชั้น (18 -> 32 -> 16 -> 1)",
         f" * พารามิเตอร์ทั้งหมด: {total_params}",
         " */\n",
-        "#ifndef FALL_MODEL_H",
-        "#define FALL_MODEL_H\n",
+        "#ifndef FALL_MODEL_COLLECTDATA_H",
+        "#define FALL_MODEL_COLLECTDATA_H\n",
         f"#define MODEL_NUM_LAYERS {n_layers}",
         f"#define MODEL_INPUT_FEATURES {INPUT_FEATURES}\n",
     ]
@@ -191,7 +192,7 @@ def export_mlp_to_c(clf, scaler, output_path):
         header_content.append("    " + ", ".join(f"{v:.8f}f" for v in b))
         header_content.append("};\n")
 
-    header_content.append("#endif // FALL_MODEL_H\n")
+    header_content.append("#endif // FALL_MODEL_COLLECTDATA_H\n")
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
@@ -201,7 +202,7 @@ def export_mlp_to_c(clf, scaler, output_path):
 
 def main():
     print("=" * 65)
-    print("  [START] เทรนโมเดล TinyML ด้วย CollectData ล้วน (train_model_collectdatal.py)")
+    print("  [START] เทรนโมเดล TinyML ด้วย CollectData ล้วน (train_model_collectdata.py)")
     print("=" * 65)
 
     fall_feats, adl_feats = load_collectdata_only()

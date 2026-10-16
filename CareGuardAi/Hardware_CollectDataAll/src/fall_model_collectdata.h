@@ -5,8 +5,8 @@
  * พารามิเตอร์ทั้งหมด: 1153
  */
 
-#ifndef FALL_MODEL_H
-#define FALL_MODEL_H
+#ifndef FALL_MODEL_COLLECTDATA_H
+#define FALL_MODEL_COLLECTDATA_H
 
 #define MODEL_NUM_LAYERS 3
 #define MODEL_INPUT_FEATURES 18
@@ -180,4 +180,4 @@ const float MODEL_B2[1] = {
     0.15404709f
 };
 
-#endif // FALL_MODEL_H
+#endif // FALL_MODEL_COLLECTDATA_H

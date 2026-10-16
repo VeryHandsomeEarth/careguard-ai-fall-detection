@@ -1,24 +1,24 @@
 /*
- * การตรวจจับการล้มด้วย TinyML (Native MLP Forward Pass)
+ * การตรวจจับการล้มด้วย TinyML (Native MLP Forward Pass) — CollectData Edition
  * พร้อมระบบ Threshold-based เป็น Fallback
  *
- * ใช้ค่าน้ำหนัก MLP ที่เทรนจากชุดข้อมูล SisFall
+ * ใช้ค่าน้ำหนัก MLP ที่เทรนจากชุดข้อมูล CollectData (train_model_collectdata.py -> fall_model_collectdata.h)
  * ไม่ต้องใช้ TFLite runtime — ใช้ C++ forward pass โดยตรง
  */
 
-#ifndef FALL_DETECTION_H
-#define FALL_DETECTION_H
+#ifndef FALL_DETECTION_COLLECTDATA_H
+#define FALL_DETECTION_COLLECTDATA_H
 
 #include <Arduino.h>
 #include <math.h>
 
 // ตรวจสอบว่ามีไฟล์โมเดลที่เทรนแล้วหรือไม่
-#if __has_include("fall_model.h")
+#if __has_include("fall_model_collectdata.h")
 #define USE_ML_MODEL 1
-#include "fall_model.h"
+#include "fall_model_collectdata.h"
 #else
 #define USE_ML_MODEL 0
-#warning "fall_model.h ไม่พบ - รัน tinyml/train_model.py ก่อน"
+#warning "fall_model_collectdata.h ไม่พบ - รัน tinyml/train_model_collectdata.py ก่อน"
 #endif
 
 class FallDetector {
@@ -428,4 +428,4 @@ public:
   void reset() {}
 };
 
-#endif // FALL_DETECTION_H
+#endif // FALL_DETECTION_COLLECTDATA_H
