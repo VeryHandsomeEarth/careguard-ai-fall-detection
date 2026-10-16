@@ -99,8 +99,9 @@ def load_collectdata_only():
             if len(data) < WINDOW_SIZE:
                 continue
 
-            # หากเป็นไฟล์บันทึกกิจวัตรปกติ (ADL) โดยตรง
-            if "adl" in fname or "เดิน" in fname or "วิ่ง" in fname or "นั่ง" in fname or "ยืน" in fname:
+            # หากเป็นไฟล์บันทึกกิจวัตรปกติ (ADL: D01-D19 หรือ adl_*) โดยตรง
+            is_adl_code = any(f"_d{i:02d}" in fname or fname.startswith(f"d{i:02d}") for i in range(1, 20))
+            if is_adl_code or "adl" in fname or "เดิน" in fname or "วิ่ง" in fname or "นั่ง" in fname or "ยืน" in fname:
                 for s in range(0, len(data) - WINDOW_SIZE + 1, 25):
                     adl_features.append(extract_features(data[s:s + WINDOW_SIZE]))
                 continue
