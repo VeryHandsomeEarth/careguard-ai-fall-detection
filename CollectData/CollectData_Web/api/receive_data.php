@@ -40,16 +40,19 @@ if (!is_array($samples) || count($samples) === 0) {
 }
 
 try {
-    // Find the record that is currently "recording" for this device
-    $stmt = $pdo->prepare("SELECT id FROM cd_records WHERE device_id = (SELECT id FROM cd_devices WHERE mac_address = ?) AND status = 'recording' ORDER BY created_at DESC LIMIT 1");
-    $stmt->execute([$mac]);
-    $record = $stmt->fetch();
-    if (!$record) {
-        http_response_code(404);
-        echo json_encode(['success'=>false,'error'=>'No active recording for this device']);
-        exit;
+    // Support explicit record_id from firmware or look up active recording for this device
+    $record_id = isset($data['record_id']) && intval($data['record_id']) > 0 ? intval($data['record_id']) : 0;
+    if ($record_id <= 0) {
+        $stmt = $pdo->prepare("SELECT id FROM cd_records WHERE device_id = (SELECT id FROM cd_devices WHERE mac_address = ?) AND status = 'recording' ORDER BY created_at DESC LIMIT 1");
+        $stmt->execute([$mac]);
+        $record = $stmt->fetch();
+        if (!$record) {
+            http_response_code(404);
+            echo json_encode(['success'=>false,'error'=>'No active recording for this device']);
+            exit;
+        }
+        $record_id = $record['id'];
     }
-    $record_id = $record['id'];
 
     // Prepare insert statement for batch insert
     $insert = $pdo->prepare("INSERT INTO cd_sensor_data (record_id, timestamp_ms, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
@@ -66,8 +69,16 @@ try {
             $sample['gz'] ?? 0,
         ]);
     }
+
+    // หากส่งสัญญาณจบการบันทึก (is_final = true) ให้เปลี่ยนสถานะเป็น completed ทันที
+    $is_final = !empty($data['is_final']);
+    if ($is_final) {
+        $upd = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE id = ?");
+        $upd->execute([$record_id]);
+    }
+
     $pdo->commit();
-    echo json_encode(['success'=>true,'inserted'=>count($samples)]);
+    echo json_encode(['success'=>true, 'inserted'=>count($samples), 'record_id'=>$record_id, 'completed'=>$is_final]);
 } catch (PDOException $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

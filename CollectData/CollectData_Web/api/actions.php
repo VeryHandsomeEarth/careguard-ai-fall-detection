@@ -307,6 +307,68 @@ try {
             fclose($output);
             exit;
 
+        // ==================== ตรวจสอบคำสั่งเริ่มบันทึกสำหรับ ESP32 (Polling) ====================
+        case 'check_command':
+            $mac = $_GET['mac'] ?? ($_GET['mac_address'] ?? '');
+            if (empty($mac)) {
+                echo json_encode(['success' => false, 'has_command' => false, 'error' => 'Missing MAC address']);
+                break;
+            }
+            $stmt = $pdo->prepare("
+                SELECT r.id as record_id, r.trial_number, r.notes,
+                       ft.code as activity_code, ft.name_th as activity_name, ft.category
+                FROM cd_records r
+                JOIN cd_devices d ON r.device_id = d.id
+                JOIN cd_fall_types ft ON r.fall_type_id = ft.id
+                WHERE d.mac_address = ? AND r.status = 'recording'
+                ORDER BY r.created_at DESC
+                LIMIT 1
+            ");
+            $stmt->execute([$mac]);
+            $cmd = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($cmd) {
+                // กำหนดระยะเวลามาตรฐานอ้างอิงตามโปรโตคอล SisFall (Sucerquia et al., 2017 - PMC5298771)
+                $code = strtolower($cmd['activity_code']);
+                $duration_sec = 12; // ค่าเริ่มต้นสำหรับ ADL ทั่วไป (D07-D16, D18-D19 = 12 วินาที)
+                if ($cmd['category'] === 'fall') {
+                    $duration_sec = 15; // โปรโตคอลการล้ม SisFall (F01-F15 = 15 วินาที)
+                } elseif (in_array($code, ['d05', 'd06', 'd17', 'adl_stairs'])) {
+                    $duration_sec = 25; // ขึ้นลงบันได / ขึ้นลงรถ = 25 วินาที
+                } elseif (in_array($code, ['d01', 'd02', 'd03', 'd04', 'adl_walk', 'adl_jog'])) {
+                    $duration_sec = 15; // เดิน / วิ่งเหยาะ (15 วินาทีต่อรอบบันทึก)
+                }
+
+                echo json_encode([
+                    'success' => true,
+                    'has_command' => true,
+                    'record_id' => intval($cmd['record_id']),
+                    'category' => $cmd['category'],
+                    'activity_code' => $cmd['activity_code'],
+                    'activity_name' => $cmd['activity_name'],
+                    'trial_number' => intval($cmd['trial_number']),
+                    'duration_sec' => $duration_sec,
+                    'countdown_sec' => 3
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => true,
+                    'has_command' => false
+                ]);
+            }
+            break;
+
+        case 'complete_record':
+            $record_id = intval($_REQUEST['record_id'] ?? 0);
+            if ($record_id > 0) {
+                $stmt = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE id = ?");
+                $stmt->execute([$record_id]);
+                echo json_encode(['success' => true, 'record_id' => $record_id, 'status' => 'completed']);
+            } else {
+                echo json_encode(['success' => false, 'error' => 'Invalid record_id']);
+            }
+            break;
+
         default:
             http_response_code(400);
             echo json_encode(['success' => false, 'error' => 'Unknown action: ' . $action]);

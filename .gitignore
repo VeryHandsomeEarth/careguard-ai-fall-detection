@@ -36,6 +36,7 @@ desktop.ini
 *.swp
 *.swo
 *~
+~$*
 
 # Temporary & Local Backup Directories
 _remote_backup/
@@ -48,7 +49,7 @@ DB-FZ.txt
 *.bak
 *.log
 
-# Root-level redundant documents (Cleanly organized inside /docs)
+# Root-level redundant documents (Cleanly organized inside /Document)
 /*.docx
 /*.pdf
 /*.pptx
@@ -56,7 +57,7 @@ DB-FZ.txt
 /generate_diagrams.py
 /generate_presentation.py
 /Slide_Presentation_Script_and_Prompt.md
-!docs/**
+!Document/**
 diagrams/
 
 generate_tinyml_diagram.py

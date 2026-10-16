@@ -22,13 +22,13 @@
 ## 🖼️ สถาปัตยกรรมระบบ (System Architecture)
 
 ### 1. ภาพรวมสถาปัตยกรรมทั้งระบบ (System Architecture Overview)
-![System Architecture Overview](docs/images/System%20Architecture%20overview.png)
+![System Architecture Overview](Document/images/System%20Architecture%20overview.png)
 
 ### 2. ไดอะแกรมโมเดลปัญญาประดิษฐ์ฝังตัว (TinyML Model Diagram)
-![TinyML Model Diagram](docs/images/TinyML%20model%20diagram.png)
+![TinyML Model Diagram](Document/images/TinyML%20model%20diagram.png)
 
 ### 3. โฟลว์ชาร์ตกระบวนการทำงานหลัก (Main Workflow Flowchart)
-![Main Workflow Flowchart](docs/images/Main%20workflow%20flowchart.png)
+![Main Workflow Flowchart](Document/images/Main%20workflow%20flowchart.png)
 
 ---
 
@@ -60,8 +60,8 @@ careguard-ai-fall-detection/
 ├── .gitignore                                   # กรองไฟล์ขยะ build artifacts และข้อมูลลับ
 │
 ├── CollectData/                                 # [โมดูลเก็บข้อมูลสำหรับการฝึกสอน AI]
-│   ├── CollectData_Hardware/                    # เฟิร์มแวร์ ESP32 เก็บข้อมูลดิบเซ็นเซอร์ MPU-6050 รุ่น 1
-│   ├── CollectData_HardwareV2/                  # เฟิร์มแวร์ ESP32 เก็บข้อมูลดิบเซ็นเซอร์ MPU-6050 รุ่น 2
+│   ├── CollectData_Hardware_Fall/               # เฟิร์มแวร์ ESP32 สำหรับเก็บข้อมูลเหตุการณ์การล้ม (Fall) โดยเฉพาะ
+│   ├── CollectData_Hardware_ADL/                # เฟิร์มแวร์ ESP32 สำหรับเก็บข้อมูลกิจวัตรประจำวัน (ADL) พร้อมสัญญาณปล่อยตัว 3-2-1-GO!
 │   └── CollectData_Web/                         # ระบบ Web Application บันทึกรอบการทดลองเก็บข้อมูลอาสาสมัคร
 │       ├── cd_trial.php                         # จัดการรอบการทดลอง (Trials)
 │       ├── record.php                           # หน้าบันทึกสตรีมข้อมูลเซ็นเซอร์
@@ -71,19 +71,26 @@ careguard-ai-fall-detection/
 │       └── config.example.php                   # ตัวอย่างไฟล์ตั้งค่าการเชื่อมต่อฐานข้อมูล
 │
 ├── CareGuardAi/                                 # [โมดูลระบบตรวจจับการล้มและมอนิเตอร์ริ่ง]
-│   ├── Hardware1/                               # เฟิร์มแวร์อุปกรณ์หลัก (TinyML + GPS NEO-7M + ไซเรน)
+│   ├── Hardware1/                               # เฟิร์มแวร์อุปกรณ์หลัก (Hybrid Model: CollectData_Web + SisFall)
 │   │   ├── src/
 │   │   │   ├── main.cpp                         # ซอร์สโค้ดหลัก FreeRTOS Dual-Core & Task Scheduling
 │   │   │   ├── fall_detection.h                 # อัลกอริทึมการสกัด 18 Features และระบบตรวจจับสำรอง
-│   │   │   └── fall_model.h                     # โมเดล MLP Weights & Biases ภาษา C++ บน ESP32
+│   │   │   └── fall_model.h                     # โมเดล MLP Weights & Biases (Hybrid Dataset)
+│   │   ├── tinyml/
+│   │   │   └── train_model.py                   # สคริปต์เทรนโมเดลแบบผสมผสาน (Hybrid)
 │   │   └── platformio.ini                       # คอนฟิกูเรชัน PlatformIO สำหรับบอร์ด ESP32
 │   │
-│   ├── Hardware2/                               # เฟิร์มแวร์อุปกรณ์เสริม (TinyML + Wi-Fi RSSI + นับก้าว)
-│   │   ├── src/
-│   │   │   ├── main.cpp                         # ซอร์สโค้ดระบบนับก้าว ตรวจจับการล้ม และส่ง RSSI
-│   │   │   ├── fall_detection.h                 # โมดูลวิเคราะห์การล้ม
-│   │   │   └── fall_model.h                     # โมเดล TinyML Weights
-│   │   └── platformio.ini                       # คอนฟิกูเรชัน PlatformIO
+│   ├── Hardware_SisFallAll/                     # เฟิร์มแวร์อุปกรณ์ที่เทรนด้วยชุดข้อมูล SisFall_Dataset ล้วน
+│   │   ├── src/                                 # main.cpp, fall_detection.h, fall_model.h (Pure SisFall)
+│   │   ├── tinyml/
+│   │   │   └── train_model_sisfall.py           # สคริปต์เทรนโมเดลด้วย SisFall_Dataset โดยเฉพาะ
+│   │   └── platformio.ini
+│   │
+│   ├── Hardware_CollectDatalAll/                # เฟิร์มแวร์อุปกรณ์ที่เทรนด้วยชุดข้อมูล CollectData ล้วน
+│   │   ├── src/                                 # main.cpp, fall_detection.h, fall_model.h (Pure CollectData)
+│   │   ├── tinyml/
+│   │   │   └── train_model_collectdatal.py      # สคริปต์เทรนโมเดลด้วย CollectData_Dataset โดยเฉพาะ
+│   │   └── platformio.ini
 │   │
 │   └── SoftwarePHP/                             # ระบบ Web Application มอนิเตอร์ริ่งและแดชบอร์ดหลัก
 │       ├── api/                                 # RESTful API Endpoints (auth, falls, gps, devices, ฯลฯ)
@@ -94,15 +101,13 @@ careguard-ai-fall-detection/
 │
 ├── dataset/                                     # [ชุดข้อมูลสำหรับการทดลองและวิจัย]
 │   ├── SisFall_Dataset/                         # ชุดข้อมูลมาตรฐาน SisFall Benchmark (SA01-SA23, SE01-SE15)
-│   └── CollectData_Web_Dataset/                 # ชุดข้อมูลจริงจากการทดลองกับอาสาสมัคร 13 ท่าน (CSV Records)
+│   └── CollectData_Web_Dataset/                 # ชุดข้อมูลจริงจากการทดลองกับอาสาสมัคร (CSV Records)
 │
-└── docs/                                        # [เอกสารประกอบโครงงานและงานวิจัย]
-    ├── ปริญญานิพนธ์_ฉบับสมบูรณ์_CareGuardAI_TinyML_V2.docx  # รายงานปริญญานิพนธ์ฉบับสมบูรณ์
-    ├── CareGuard_Project_Presentation.pptx                  # สไลด์นำเสนอโครงงาน
-    └── images/                                              # ไดอะแกรมและแผนภาพประกอบระบบ
-        ├── System Architecture overview.png
-        ├── TinyML model diagram.png
-        └── Main workflow flowchart.png
+└── Document/                                    # [เอกสารประกอบโครงงานและงานวิจัย]
+    ├── Logbook/                                 # สมุดบันทึกการปฏิบัติงานโครงงาน (DOC / PDF)
+    ├── P0-9/                                    # เอกสารแบบฟอร์มโครงงาน P01 - P09 (DOC / PDF)
+    ├── Template ปริญญานิพนธ์/                    # เอกสารปริญญานิพนธ์ฉบับเต็มแยกตามบท (01-11, Full.docx, Full.pdf)
+    └── images/                                  # รูปภาพและสื่อวิดีโอประกอบโครงงาน
 ```
 
 ---
