@@ -70,15 +70,28 @@ try {
         ]);
     }
 
+    // ตรวจสอบว่าผู้ใช้งานกดปุ่มหยุดบันทึกจากหน้าเว็บแล้วหรือไม่
+    $statusStmt = $pdo->prepare("SELECT status FROM cd_records WHERE id = ?");
+    $statusStmt->execute([$record_id]);
+    $currentStatus = $statusStmt->fetchColumn();
+    $stop_requested = ($currentStatus === 'completed' || $currentStatus === 'cancelled');
+
     // หากส่งสัญญาณจบการบันทึก (is_final = true) ให้เปลี่ยนสถานะเป็น completed ทันที
     $is_final = !empty($data['is_final']);
     if ($is_final) {
         $upd = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE id = ?");
         $upd->execute([$record_id]);
+        $stop_requested = true;
     }
 
     $pdo->commit();
-    echo json_encode(['success'=>true, 'inserted'=>count($samples), 'record_id'=>$record_id, 'completed'=>$is_final]);
+    echo json_encode([
+        'success' => true,
+        'inserted' => count($samples),
+        'record_id' => $record_id,
+        'completed' => $is_final,
+        'stop_requested' => $stop_requested
+    ]);
 } catch (PDOException $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

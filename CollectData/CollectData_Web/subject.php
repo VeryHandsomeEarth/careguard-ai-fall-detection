@@ -15,8 +15,14 @@ $subject->execute([$id]);
 $subject = $subject->fetch();
 if (!$subject) { header('Location: index.php'); exit; }
 
-function getActivityDurationSec(string $code, string $category): int {
+function getActivityDurationSec(string $code, string $category, string $notes = ''): int {
     $c = strtolower($code);
+    if (stripos($notes, 'continuous') !== false || $c === 'adl_continuous_stream' || $c === 'd19') {
+        return 0; // 0 = continuous stream (กดเริ่ม - กดหยุด)
+    }
+    if (stripos($notes, '60') !== false || $c === 'adl_continuous_stumble' || $c === 'd18') {
+        return 60; // 60 วินาที
+    }
     if ($category === 'fall' || strpos($c, 'fall_') === 0) {
         return 15;
     }
@@ -45,16 +51,18 @@ $fallTypeSelectGroups = [
         'label' => 'ประเภท 2 กิจวัตรประจำวัน (ADL)',
         'category' => 'adl',
         'items' => [
-            ['code' => 'adl_stand',       'name_th' => 'D01 การยืนปกติ',          'name_en' => 'D01 Standing',              'duration_sec' => 12],
-            ['code' => 'adl_sit',         'name_th' => 'D02 การนั่งปกติ',          'name_en' => 'D02 Sitting',               'duration_sec' => 12],
-            ['code' => 'adl_walk',        'name_th' => 'D03 การเดินปกติ',         'name_en' => 'D03 Walking',               'duration_sec' => 15],
-            ['code' => 'adl_jog',         'name_th' => 'D04 การวิ่งเหยาะ',         'name_en' => 'D04 Jogging',               'duration_sec' => 15],
-            ['code' => 'adl_sit_down',    'name_th' => 'D05 การนั่งลงปกติ',        'name_en' => 'D05 Normal Sit Down',       'duration_sec' => 12],
-            ['code' => 'adl_chair_up',    'name_th' => 'D06 การลุกขึ้นจากเก้าอี้',  'name_en' => 'D06 Stand Up from Chair',   'duration_sec' => 12],
-            ['code' => 'adl_stairs_up',   'name_th' => 'D07 การขึ้นบันได',         'name_en' => 'D07 Upstairs',              'duration_sec' => 25],
-            ['code' => 'adl_stairs_down', 'name_th' => 'D08 การลงบันได',          'name_en' => 'D08 Downstairs',            'duration_sec' => 25],
-            ['code' => 'adl_pickup',      'name_th' => 'D09 การก้มเก็บของ',        'name_en' => 'D09 Pick Up Object',        'duration_sec' => 12],
-            ['code' => 'adl_change_pose', 'name_th' => 'D10 การเปลี่ยนท่าทางปกติ', 'name_en' => 'D10 Normal Posture Change', 'duration_sec' => 12],
+            ['code' => 'adl_stand',              'name_th' => 'D01 การยืนปกติ',                        'name_en' => 'D01 Standing',                            'duration_sec' => 12],
+            ['code' => 'adl_sit',                'name_th' => 'D02 การนั่งปกติ',                        'name_en' => 'D02 Sitting',                             'duration_sec' => 12],
+            ['code' => 'adl_walk',               'name_th' => 'D03 การเดินปกติ',                       'name_en' => 'D03 Walking',                             'duration_sec' => 15],
+            ['code' => 'adl_jog',                'name_th' => 'D04 การวิ่งเหยาะ',                       'name_en' => 'D04 Jogging',                             'duration_sec' => 15],
+            ['code' => 'adl_sit_down',           'name_th' => 'D05 การนั่งลงปกติ',                      'name_en' => 'D05 Normal Sit Down',                     'duration_sec' => 12],
+            ['code' => 'adl_chair_up',           'name_th' => 'D06 การลุกขึ้นจากเก้าอี้',                'name_en' => 'D06 Stand Up from Chair',                 'duration_sec' => 12],
+            ['code' => 'adl_stairs_up',          'name_th' => 'D07 การขึ้นบันได',                       'name_en' => 'D07 Upstairs',                            'duration_sec' => 25],
+            ['code' => 'adl_stairs_down',        'name_th' => 'D08 การลงบันได',                        'name_en' => 'D08 Downstairs',                          'duration_sec' => 25],
+            ['code' => 'adl_pickup',             'name_th' => 'D09 การก้มเก็บของ',                      'name_en' => 'D09 Pick Up Object',                      'duration_sec' => 12],
+            ['code' => 'adl_change_pose',        'name_th' => 'D10 การเปลี่ยนท่าทางปกติ',               'name_en' => 'D10 Normal Posture Change',               'duration_sec' => 12],
+            ['code' => 'adl_continuous_stumble', 'name_th' => 'D18 การเดินสะดุดต่อเนื่อง (60 วินาที)',  'name_en' => 'D18 Continuous Stumble (60s)',            'duration_sec' => 60],
+            ['code' => 'adl_continuous_stream',  'name_th' => 'D19 การบันทึกต่อเนื่องไม่จำกัดเวลา (กดเริ่ม - กดหยุด)', 'name_en' => 'D19 Continuous Streaming (Start-Stop)', 'duration_sec' => 0],
         ],
     ],
     [
@@ -155,7 +163,7 @@ foreach ($records as $r) {
         $grouped[$key] = [
             'name' => $r['fall_type_name'],
             'category' => $r['category'],
-            'duration_sec' => getActivityDurationSec($r['fall_type_code'], $r['category']),
+            'duration_sec' => getActivityDurationSec($r['fall_type_code'], $r['category'], $r['notes'] ?? ''),
             'records' => []
         ];
     }
@@ -339,6 +347,7 @@ $trials = $trials->fetchAll();
                                                 <span class="badge badge-recording pulse-wait" id="status_badge_<?= (int)$r['id'] ?>">
                                                     <?= $pts > 0 ? '📥 กำลังรับข้อมูล (' . number_format($pts) . ' จุด)...' : '⏳ รอ ESP32 ส่งข้อมูล...' ?>
                                                 </span>
+                                                <button class="btn btn-danger btn-sm" onclick="stopCommand(<?= (int)$r['id'] ?>)" title="สั่งให้ ESP32 หยุดบันทึกและปิดรอบทันที" style="background:#ef4444;color:#fff;border-color:#dc2626;">⏹️ หยุดบันทึก</button>
                                                 <button class="btn btn-outline btn-sm" onclick="cancelCommand(<?= (int)$r['id'] ?>)" title="ยกเลิกการรอรับข้อมูลจาก ESP32">✘ ยกเลิก</button>
                                             <?php elseif ($isDone): ?>
                                                 <span class="badge badge-adl" id="status_badge_<?= (int)$r['id'] ?>">✔ เสร็จสิ้น</span>
@@ -439,12 +448,21 @@ $trials = $trials->fetchAll();
                         <input type="number" name="trial_number" value="1" min="1">
                     </div>
                     <div class="form-group">
-                        <label>การดำเนินการเริ่มต้น</label>
-                        <select name="status">
-                            <option value="pending" selected>⚪ รอส่งคำสั่ง (กดปุ่มส่งคำสั่งในตาราง)</option>
-                            <option value="recording">📡 ส่งคำสั่งไปยัง ESP32 ทันที</option>
+                        <label>โหมดระยะเวลาบันทึก</label>
+                        <select name="duration_mode" id="durationModeSelect">
+                            <option value="auto" selected>⏱️ ตามมาตรฐานท่าทาง (12s / 15s / 25s)</option>
+                            <option value="60">⏳ บันทึกยาวพิเศษ 60 วินาที (60s Long)</option>
+                            <option value="continuous">🔴 บันทึกต่อเนื่องไม่จำกัดเวลา (กดเริ่ม - กดหยุดด้วยมือ)</option>
                         </select>
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <label>การดำเนินการเริ่มต้น</label>
+                    <select name="status">
+                        <option value="pending" selected>⚪ รอส่งคำสั่ง (กดปุ่มส่งคำสั่งในตาราง)</option>
+                        <option value="recording">📡 ส่งคำสั่งไปยัง ESP32 ทันที</option>
+                    </select>
                 </div>
 
                 <div class="form-group">
@@ -689,6 +707,37 @@ $trials = $trials->fetchAll();
                 location.reload();
             } else {
                 showError('ข้อผิดพลาด: ' + (data.error || 'ไม่สามารถยกเลิกคำสั่งได้'));
+            }
+        }
+
+        async function stopCommand(id) {
+            const confirmed = await confirmAction({
+                title: 'หยุดบันทึกข้อมูลรอบนี้?',
+                text: 'ระบบจะสั่งให้ ESP32 สรุปข้อมูลที่บันทึกได้และปิดรอบทันที',
+                confirmButtonText: '⏹️ สั่งหยุดบันทึก',
+                confirmButtonColor: '#ef4444'
+            });
+            if (!confirmed) return;
+
+            const badge = document.getElementById('status_badge_' + id);
+            if (badge) badge.textContent = '⏹️ กำลังส่งคำสั่งหยุดไปยัง ESP32...';
+
+            const form = new FormData();
+            form.append('id', id);
+            const res = await fetch('api/actions.php?action=stop_command', { method: 'POST', body: form });
+            const data = await res.json();
+            if (data.success) {
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'ส่งคำสั่งหยุดแล้ว',
+                        text: 'ESP32 จะบันทึกจุดสุดท้ายและสรุปสถานะเป็นเสร็จสิ้น',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                }
+            } else {
+                showError('ข้อผิดพลาด: ' + (data.error || 'ไม่สามารถหยุดคำสั่งได้'));
             }
         }
 

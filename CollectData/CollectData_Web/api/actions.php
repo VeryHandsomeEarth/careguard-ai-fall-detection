@@ -80,6 +80,14 @@ try {
                 $resetStmt = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE device_id = ? AND status = 'recording'");
                 $resetStmt->execute([$device_id]);
             }
+            $raw_notes = trim($_POST['notes'] ?? '');
+            $dur_mode = $_POST['duration_mode'] ?? 'auto';
+            if ($dur_mode === 'continuous') {
+                $raw_notes .= (empty($raw_notes) ? '' : ' ') . '[duration:continuous]';
+            } elseif ($dur_mode === '60') {
+                $raw_notes .= (empty($raw_notes) ? '' : ' ') . '[duration:60]';
+            }
+
             $stmt = $pdo->prepare("
                 INSERT INTO cd_records (subject_id, device_id, fall_type_id, trial_id, trial_number, notes, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -90,7 +98,7 @@ try {
                 intval($_POST['fall_type_id'] ?? 0),
                 $trial_id,
                 intval($_POST['trial_number'] ?? 1),
-                $_POST['notes'] ?? '',
+                $raw_notes,
                 $db_status
             ]);
             $new_id = $pdo->lastInsertId();
@@ -402,15 +410,39 @@ try {
             $cmd = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($cmd) {
-                // กำหนดระยะเวลามาตรฐานอ้างอิงตามโปรโตคอล SisFall (Sucerquia et al., 2017 - PMC5298771)
+                $notes = $cmd['notes'] ?? '';
                 $code = strtolower($cmd['activity_code']);
-                $duration_sec = 12; // ค่าเริ่มต้นสำหรับ ADL ทั่วไป / Near-Fall / Test (12 วินาที)
-                if ($cmd['category'] === 'fall' || strpos($code, 'fall_') === 0) {
-                    $duration_sec = 15; // โปรโตคอลการล้ม SisFall (F01-F05 = 15 วินาที)
+                $duration_sec = 12; // ค่าเริ่มต้นมาตรฐาน
+                $is_continuous = false;
+
+                // 1) โหมดต่อเนื่องไม่จำกัดเวลา (กดเริ่ม - กดหยุด)
+                if (stripos($notes, '[duration:continuous]') !== false ||
+                    stripos($notes, 'continuous') !== false ||
+                    $code === 'd19' ||
+                    $code === 'adl_continuous_stream') {
+                    $duration_sec = 0; // 0 = continuous stream
+                    $is_continuous = true;
+                }
+                // 2) โหมดระบุเวลาผ่านแท็ก [duration:XX]
+                elseif (preg_match('/\[duration:(\d+)\]/', $notes, $m)) {
+                    $duration_sec = min(60, max(3, intval($m[1])));
+                    $is_continuous = false;
+                }
+                // 3) โหมดยาวพิเศษ 60 วินาที (เช่น D18 เดินสะดุดต่อเนื่อง)
+                elseif (stripos($notes, '[duration:60]') !== false ||
+                        stripos($notes, '60s') !== false ||
+                        $code === 'd18' ||
+                        $code === 'adl_continuous_stumble') {
+                    $duration_sec = 60;
+                    $is_continuous = false;
+                }
+                // 4) กำหนดตามมาตรฐาน SisFall (15s, 25s, 12s)
+                elseif ($cmd['category'] === 'fall' || strpos($code, 'fall_') === 0) {
+                    $duration_sec = 15;
                 } elseif (in_array($code, ['d05', 'd06', 'd07', 'd08', 'd17', 'adl_stairs', 'adl_stairs_up', 'adl_stairs_down'])) {
-                    $duration_sec = 25; // ขึ้นลงบันได (D07, D08 = 25 วินาที)
+                    $duration_sec = 25;
                 } elseif (in_array($code, ['d01', 'd02', 'd03', 'd04', 'adl_walk', 'adl_jog'])) {
-                    $duration_sec = 15; // เดิน / วิ่งเหยาะ (D03, D04 = 15 วินาที)
+                    $duration_sec = 15;
                 }
 
                 echo json_encode([
@@ -422,6 +454,7 @@ try {
                     'activity_name' => $cmd['activity_name'],
                     'trial_number' => intval($cmd['trial_number']),
                     'duration_sec' => $duration_sec,
+                    'is_continuous' => $is_continuous,
                     'countdown_sec' => 3
                 ]);
             } else {
@@ -430,6 +463,18 @@ try {
                     'has_command' => false
                 ]);
             }
+            break;
+
+        case 'stop_command':
+            $record_id = intval($_POST['id'] ?? ($_REQUEST['record_id'] ?? 0));
+            if ($record_id <= 0) {
+                echo json_encode(['success' => false, 'error' => 'Invalid record_id']);
+                break;
+            }
+            // ปรับสถานะเป็น completed เพื่อให้ receive_data.php ส่ง stop_requested: true ให้ ESP32
+            $stmt = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE id = ?");
+            $stmt->execute([$record_id]);
+            echo json_encode(['success' => true, 'record_id' => $record_id, 'status' => 'completed']);
             break;
 
         case 'complete_record':
