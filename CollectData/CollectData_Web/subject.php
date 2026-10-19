@@ -1,6 +1,6 @@
 <?php
 /**
- * หน้าผู้ทดสอบ — บันทึกการล้ม + กราฟแยกประเภท
+ * หน้าผู้ทดสอบ — บันทึกท่าล้ม (F01-F05) & กิจวัตรปกติ (D01-D06)
  * URL: subject.php?id=1
  */
 require_once 'config.php';
@@ -15,82 +15,42 @@ $subject->execute([$id]);
 $subject = $subject->fetch();
 if (!$subject) { header('Location: index.php'); exit; }
 
-function getActivityDurationSec(string $code, string $category, string $notes = ''): int {
-    $c = strtolower($code);
-    if (stripos($notes, 'continuous') !== false || $c === 'adl_continuous_stream' || $c === 'd19') {
-        return 0; // 0 = continuous stream (กดเริ่ม - กดหยุด)
+function getActivityDurationSec(string $code, string $category): int {
+    $c = strtoupper($code);
+    if ($category === 'fall' || strpos($c, 'F') === 0 || stripos($code, 'fall') !== false) {
+        return 2;
     }
-    if (stripos($notes, '60') !== false || $c === 'adl_continuous_stumble' || $c === 'd18') {
-        return 60; // 60 วินาที
-    }
-    if ($category === 'fall' || strpos($c, 'fall_') === 0) {
-        return 15;
-    }
-    if (in_array($c, ['d05', 'd06', 'd07', 'd08', 'd17', 'adl_stairs', 'adl_stairs_up', 'adl_stairs_down'], true)) {
-        return 25;
-    }
-    if (in_array($c, ['d01', 'd02', 'd03', 'd04', 'adl_walk', 'adl_jog'], true)) {
-        return 15;
-    }
-    return 12;
+    return 10;
 }
 
+// ==================== กำหนด 11 ท่ามาตรฐาน (5 ท่าล้ม + 6 ท่า ADL) ====================
 $fallTypeSelectGroups = [
     [
-        'label' => 'ประเภท 1 การล้ม (Fall)',
+        'label' => 'ประเภท 1 การล้ม (Fall) — 2 วินาที (ก่อนล้ม 1 วิ + หลังล้ม 1 วิ)',
         'category' => 'fall',
         'items' => [
-            ['code' => 'fall_forward',  'name_th' => 'F01 การล้มไปข้างหน้า',  'name_en' => 'F01 Fall Forward',       'duration_sec' => 15],
-            ['code' => 'fall_backward', 'name_th' => 'F02 การล้มไปข้างหลัง',  'name_en' => 'F02 Fall Backward',      'duration_sec' => 15],
-            ['code' => 'fall_left',     'name_th' => 'F03 การล้มไปด้านซ้าย',  'name_en' => 'F03 Fall Left',          'duration_sec' => 15],
-            ['code' => 'fall_right',    'name_th' => 'F04 การล้มไปด้านขวา',   'name_en' => 'F04 Fall Right',         'duration_sec' => 15],
-            ['code' => 'fall_sitting',  'name_th' => 'F05 การล้มจากท่านั่ง',   'name_en' => 'F05 Fall from Sitting',  'duration_sec' => 15],
+            ['code' => 'F01', 'name_th' => 'F01 การล้มไปข้างหน้า',  'name_en' => 'F01 Fall Forward',   'duration_sec' => 2],
+            ['code' => 'F02', 'name_th' => 'F02 การล้มไปข้างหลัง',  'name_en' => 'F02 Fall Backward',  'duration_sec' => 2],
+            ['code' => 'F03', 'name_th' => 'F03 การล้มไปด้านซ้าย',  'name_en' => 'F03 Fall Left',      'duration_sec' => 2],
+            ['code' => 'F04', 'name_th' => 'F04 การล้มไปด้านขวา',   'name_en' => 'F04 Fall Right',     'duration_sec' => 2],
+            ['code' => 'F05', 'name_th' => 'F05 การล้มทรุดตัวแนวดิ่ง', 'name_en' => 'F05 Vertical Fall', 'duration_sec' => 2],
         ],
     ],
     [
-        'label' => 'ประเภท 2 กิจวัตรประจำวัน (ADL)',
+        'label' => 'ประเภท 2 กิจวัตรประจำวัน (ADL) — 10 วินาที (ยืนเตรียมตัว 1 วิ + ทำท่า 8 วิ + ยืน 1 วิ)',
         'category' => 'adl',
         'items' => [
-            ['code' => 'adl_stand',              'name_th' => 'D01 การยืนปกติ',                        'name_en' => 'D01 Standing',                            'duration_sec' => 12],
-            ['code' => 'adl_sit',                'name_th' => 'D02 การนั่งปกติ',                        'name_en' => 'D02 Sitting',                             'duration_sec' => 12],
-            ['code' => 'adl_walk',               'name_th' => 'D03 การเดินปกติ',                       'name_en' => 'D03 Walking',                             'duration_sec' => 15],
-            ['code' => 'adl_jog',                'name_th' => 'D04 การวิ่งเหยาะ',                       'name_en' => 'D04 Jogging',                             'duration_sec' => 15],
-            ['code' => 'adl_sit_down',           'name_th' => 'D05 การนั่งลงปกติ',                      'name_en' => 'D05 Normal Sit Down',                     'duration_sec' => 12],
-            ['code' => 'adl_chair_up',           'name_th' => 'D06 การลุกขึ้นจากเก้าอี้',                'name_en' => 'D06 Stand Up from Chair',                 'duration_sec' => 12],
-            ['code' => 'adl_stairs_up',          'name_th' => 'D07 การขึ้นบันได',                       'name_en' => 'D07 Upstairs',                            'duration_sec' => 25],
-            ['code' => 'adl_stairs_down',        'name_th' => 'D08 การลงบันได',                        'name_en' => 'D08 Downstairs',                          'duration_sec' => 25],
-            ['code' => 'adl_pickup',             'name_th' => 'D09 การก้มเก็บของ',                      'name_en' => 'D09 Pick Up Object',                      'duration_sec' => 12],
-            ['code' => 'adl_change_pose',        'name_th' => 'D10 การเปลี่ยนท่าทางปกติ',               'name_en' => 'D10 Normal Posture Change',               'duration_sec' => 12],
-            ['code' => 'adl_continuous_stumble', 'name_th' => 'D18 การเดินสะดุดต่อเนื่อง (60 วินาที)',  'name_en' => 'D18 Continuous Stumble (60s)',            'duration_sec' => 60],
-            ['code' => 'adl_continuous_stream',  'name_th' => 'D19 การบันทึกต่อเนื่องไม่จำกัดเวลา (กดเริ่ม - กดหยุด)', 'name_en' => 'D19 Continuous Streaming (Start-Stop)', 'duration_sec' => 0],
-        ],
-    ],
-    [
-        'label' => 'ประเภท 3 คล้ายล้มแต่ไม่ล้ม (Near-Fall)',
-        'category' => 'other',
-        'items' => [
-            ['code' => 'impact_forward',  'name_th' => 'N01 การเกือบล้มไปข้างหน้าแต่ทรงตัวได้', 'name_en' => 'N01 Near Forward Fall',          'duration_sec' => 12],
-            ['code' => 'impact_backward', 'name_th' => 'N02 การเกือบล้มไปข้างหลังแต่ทรงตัวได้', 'name_en' => 'N02 Near Backward Fall',         'duration_sec' => 12],
-            ['code' => 'impact_left',     'name_th' => 'N03 การเกือบล้มไปด้านซ้ายแต่ทรงตัวได้', 'name_en' => 'N03 Near Left Fall',             'duration_sec' => 12],
-            ['code' => 'impact_right',    'name_th' => 'N04 การเกือบล้มไปด้านขวาแต่ทรงตัวได้',  'name_en' => 'N04 Near Right Fall',            'duration_sec' => 12],
-            ['code' => 'impact_stumble',  'name_th' => 'N05 การสะดุดแต่ไม่ล้ม',                 'name_en' => 'N05 Stumble Without Fall',       'duration_sec' => 12],
-            ['code' => 'impact_hard_sit', 'name_th' => 'N06 การนั่งลงแรงแต่ไม่ล้ม',             'name_en' => 'N06 Hard Sit Without Fall',      'duration_sec' => 12],
-            ['code' => 'impact_stop',     'name_th' => 'N07 การหยุดเดินหรือวิ่งกะทันหัน',        'name_en' => 'N07 Sudden Stop',                'duration_sec' => 12],
-            ['code' => 'impact_device',   'name_th' => 'N08 อุปกรณ์ถูกกระแทกแต่ผู้สวมใส่ไม่ล้ม', 'name_en' => 'N08 Device Impact Without Fall', 'duration_sec' => 12],
-        ],
-    ],
-    [
-        'label' => 'ประเภท 4 ทดสอบระบบ (Test / Exclude)',
-        'category' => 'other',
-        'items' => [
-            ['code' => 'exclude_device', 'name_th' => 'T01 การทดสอบอุปกรณ์',                    'name_en' => 'T01 Device Test',         'duration_sec' => 12],
-            ['code' => 'exclude_wifi',   'name_th' => 'T02 การทดสอบระบบเครือข่าย (Wi-Fi / Server)', 'name_en' => 'T02 Wi-Fi / Server Test', 'duration_sec' => 12],
-            ['code' => 'exclude_sensor', 'name_th' => 'T03 การทดสอบเซนเซอร์',                   'name_en' => 'T03 Sensor Test',         'duration_sec' => 12],
-            ['code' => 'exclude_error',  'name_th' => 'T04 ข้อมูลผิดพลาด (ไม่ใช้เทรนโมเดล)',    'name_en' => 'T04 Invalid Data',        'duration_sec' => 12],
+            ['code' => 'D01', 'name_th' => 'D01 การเดิน',            'name_en' => 'D01 Walking',             'duration_sec' => 10],
+            ['code' => 'D02', 'name_th' => 'D02 การวิ่ง',            'name_en' => 'D02 Jogging',             'duration_sec' => 10],
+            ['code' => 'D03', 'name_th' => 'D03 การขึ้นบันได',       'name_en' => 'D03 Upstairs',            'duration_sec' => 10],
+            ['code' => 'D04', 'name_th' => 'D04 การก้มตัว',          'name_en' => 'D04 Bending',             'duration_sec' => 10],
+            ['code' => 'D05', 'name_th' => 'D05 การลุกนั่ง',         'name_en' => 'D05 Sit to Stand',        'duration_sec' => 10],
+            ['code' => 'D06', 'name_th' => 'D06 การลุกนั่งแบบเร็ว',   'name_en' => 'D06 Quick Sit to Stand',  'duration_sec' => 10],
         ],
     ],
 ];
 
+// ตรวจสอบและลงทะเบียน 11 ท่ามาตรฐานลง cd_fall_types
 $ensureFallType = $pdo->prepare("
     INSERT INTO cd_fall_types (code, name_th, name_en, category)
     VALUES (?, ?, ?, ?)
@@ -110,76 +70,81 @@ foreach ($fallTypeSelectGroups as $group) {
     }
 }
 
-// อัปเดตรหัสเก่าในฐานข้อมูล (ถ้ามี) ให้เป็นรูปแบบเดียวกันทั้งหมด
-$legacyFallTypes = [
-    ['code' => 'fall_lateral',      'name_th' => 'F06 การล้มไปด้านข้าง',  'name_en' => 'F06 Lateral Fall',       'category' => 'fall'],
-    ['code' => 'near_fall',         'name_th' => 'N00 การเกือบล้ม',       'name_en' => 'N00 Near Fall',          'category' => 'other'],
-    ['code' => 'adl_stairs',        'name_th' => 'D11 การขึ้นลงบันได',     'name_en' => 'D11 Stairs',             'category' => 'adl'],
-    ['code' => 'custom_1782373044', 'name_th' => 'T00 การทดสอบอุปกรณ์',   'name_en' => 'T00 Testing the device', 'category' => 'other'],
+// อัปเดตรหัสเก่าที่บันทึกไว้ในอดีตให้ชี้ไปยังรหัสมาตรฐาน 11 ท่า
+$legacyMap = [
+    'fall_forward'    => 'F01',
+    'fall_backward'   => 'F02',
+    'fall_left'       => 'F03',
+    'fall_right'      => 'F04',
+    'fall_lateral'    => 'F03',
+    'fall_sitting'    => 'F05',
+    'adl_walk'        => 'D01',
+    'adl_jog'         => 'D02',
+    'adl_stairs'      => 'D03',
+    'adl_stairs_up'   => 'D03',
+    'adl_stairs_down' => 'D03',
+    'adl_pickup'      => 'D04',
+    'adl_bend'        => 'D04',
+    'adl_sit'         => 'D05',
+    'adl_sit_down'    => 'D05',
+    'adl_chair_up'    => 'D06',
+    'adl_stand'       => 'D01',
+    'adl_change_pose' => 'D04'
 ];
-$updLegacyStmt = $pdo->prepare("UPDATE cd_fall_types SET name_th = ?, name_en = ?, category = ? WHERE code = ?");
-foreach ($legacyFallTypes as $lf) {
-    $updLegacyStmt->execute([$lf['name_th'], $lf['name_en'], $lf['category'], $lf['code']]);
+foreach ($legacyMap as $oldCode => $newCode) {
+    $checkOld = $pdo->prepare("SELECT id FROM cd_fall_types WHERE code = ?");
+    $checkOld->execute([$oldCode]);
+    $oldId = $checkOld->fetchColumn();
+
+    $checkNew = $pdo->prepare("SELECT id FROM cd_fall_types WHERE code = ?");
+    $checkNew->execute([$newCode]);
+    $newId = $checkNew->fetchColumn();
+
+    if ($oldId && $newId && (int)$oldId !== (int)$newId) {
+        $pdo->prepare("UPDATE cd_records SET fall_type_id = ? WHERE fall_type_id = ?")->execute([$newId, $oldId]);
+    }
 }
 
-// หากมีหลายรายการของผู้ทดสอบนี้ที่ค้างสถานะ recording พร้อมกันแต่ยังไม่มีข้อมูล (0 จุด) จากระบบเก่า ให้รีเซ็ตเป็นรอส่งคำสั่ง
-$stuckCheck = $pdo->prepare("
-    SELECT id FROM cd_records r
-    WHERE r.subject_id = ? AND r.status = 'recording'
-      AND (SELECT COUNT(*) FROM cd_sensor_data WHERE record_id = r.id) = 0
-");
-$stuckCheck->execute([$id]);
-$stuckIds = $stuckCheck->fetchAll(PDO::FETCH_COLUMN);
-if (count($stuckIds) > 1) {
-    $pdo->prepare("
-        UPDATE cd_records r
-        SET r.status = 'completed'
-        WHERE r.subject_id = ? AND r.status = 'recording'
-          AND (SELECT COUNT(*) FROM cd_sensor_data WHERE record_id = r.id) = 0
-    ")->execute([$id]);
+// ดึงรายการประเภททั้งหมดจาก DB
+$fallTypeRows = $pdo->query("SELECT * FROM cd_fall_types ORDER BY category, id")->fetchAll();
+$fallTypesByCode = [];
+foreach ($fallTypeRows as $ft) {
+    $fallTypesByCode[$ft['code']] = $ft;
 }
 
-// ดึงบันทึกทั้งหมดของผู้ทดสอบ
-$records = $pdo->prepare("
+// ดึงบันทึกทั้งหมดของผู้ทดสอบนี้
+$recordsStmt = $pdo->prepare("
     SELECT r.*, ft.name_th as fall_type_name, ft.code as fall_type_code, ft.category,
            d.name as device_name,
-           t.trial_label as trial_label,
            (SELECT COUNT(*) FROM cd_sensor_data WHERE record_id = r.id) as data_points
     FROM cd_records r
     JOIN cd_fall_types ft ON r.fall_type_id = ft.id
     JOIN cd_devices d ON r.device_id = d.id
-    LEFT JOIN cd_trial t ON r.trial_id = t.id
     WHERE r.subject_id = ?
-    ORDER BY ft.category, ft.id, r.trial_number
+    ORDER BY ft.category, ft.code, r.trial_number ASC
 ");
-$records->execute([$id]);
-$records = $records->fetchAll();
+$recordsStmt->execute([$id]);
+$allRecords = $recordsStmt->fetchAll();
 
-// จัดกลุ่มตามประเภท
+// จัดกลุ่มบันทึกตามท่าทาง (Posture Grouping)
 $grouped = [];
-foreach ($records as $r) {
+foreach ($allRecords as $r) {
     $key = $r['fall_type_code'];
     if (!isset($grouped[$key])) {
         $grouped[$key] = [
+            'fall_type_id' => (int)$r['fall_type_id'],
+            'code' => $r['fall_type_code'],
             'name' => $r['fall_type_name'],
             'category' => $r['category'],
-            'duration_sec' => getActivityDurationSec($r['fall_type_code'], $r['category'], $r['notes'] ?? ''),
+            'duration_sec' => getActivityDurationSec($r['fall_type_code'], $r['category']),
             'records' => []
         ];
     }
     $grouped[$key]['records'][] = $r;
 }
 
-// ดึงรายการอุปกรณ์ + ประเภทการล้ม + รอบทดลอง
+// ดึงอุปกรณ์ที่ลงทะเบียนไว้
 $devices = $pdo->query("SELECT * FROM cd_devices ORDER BY name")->fetchAll();
-$fallTypeRows = $pdo->query("SELECT * FROM cd_fall_types")->fetchAll();
-$fallTypesByCode = [];
-foreach ($fallTypeRows as $ft) {
-    $fallTypesByCode[$ft['code']] = $ft;
-}
-$trials = $pdo->prepare("SELECT * FROM cd_trial WHERE subject_id = ? ORDER BY id DESC");
-$trials->execute([$id]);
-$trials = $trials->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -192,13 +157,68 @@ $trials = $trials->fetchAll();
     <script src="js/app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <style>
-        .record-row { cursor: pointer; }
-        .record-row:hover { background: rgba(0,210,255,0.08); }
-        .record-row.selected-record { background: rgba(0,210,255,0.14); outline: 1px solid var(--accent); }
-        .chart-status {
-            color: var(--text-secondary);
+        .posture-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+            overflow: hidden;
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+        .posture-card:hover {
+            box-shadow: var(--shadow);
+            border-color: var(--accent);
+        }
+        .posture-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            gap: 16px;
+            flex-wrap: wrap;
+            background: linear-gradient(90deg, rgba(255,255,255,0.01), rgba(0,210,255,0.02));
+        }
+        .posture-title-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            user-select: none;
+            flex: 1;
+            min-width: 260px;
+        }
+        .posture-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .posture-actions-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .posture-accordion {
+            border-top: 1px solid var(--border);
+            background: var(--bg-primary);
+            padding: 0;
+            display: none;
+        }
+        .posture-accordion.open {
+            display: block;
+        }
+        .trial-row:hover {
+            background: var(--row-hover);
+        }
+        .chart-collapse-row {
+            background: rgba(0, 0, 0, 0.22);
+            border-bottom: 2px solid var(--accent);
+        }
+        .count-badge {
             font-size: 13px;
-            margin: 8px 0 0;
+            color: var(--text-secondary);
+            margin-left: 4px;
+            white-space: nowrap;
         }
         @keyframes pulseWait {
             0%, 100% { opacity: 1; }
@@ -206,6 +226,13 @@ $trials = $trials->fetchAll();
         }
         .pulse-wait {
             animation: pulseWait 1.5s infinite ease-in-out;
+        }
+        .btn-icon {
+            padding: 6px 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
         }
     </style>
 </head>
@@ -252,153 +279,181 @@ $trials = $trials->fetchAll();
         <!-- สถิติ -->
         <div class="grid grid-3" style="margin-bottom:24px">
             <div class="stat-card">
-                <div class="stat-value"><?= count($records) ?></div>
+                <div class="stat-value"><?= count($allRecords) ?></div>
                 <div class="stat-label">บันทึกทั้งหมด</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value"><?= count(array_filter($records, fn($r) => $r['category'] == 'fall')) ?></div>
+                <div class="stat-value"><?= count(array_filter($allRecords, fn($r) => $r['category'] == 'fall')) ?></div>
                 <div class="stat-label">บันทึกการล้ม</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value"><?= count(array_filter($records, fn($r) => $r['category'] == 'adl')) ?></div>
+                <div class="stat-value"><?= count(array_filter($allRecords, fn($r) => $r['category'] == 'adl')) ?></div>
                 <div class="stat-label">บันทึก ADL</div>
             </div>
         </div>
 
-        <?php if (empty($records)): ?>
+        <?php if (empty($grouped)): ?>
             <div class="empty-state">
                 <div class="icon">📝</div>
-                <p>ยังไม่มีบันทึกสำหรับผู้ทดสอบนี้</p>
+                <p>ยังไม่มีรายการบันทึกสำหรับผู้ทดสอบนี้</p>
                 <button class="btn btn-primary" onclick="openModal('addRecordModal')">+ เพิ่มบันทึกแรก</button>
             </div>
         <?php else: ?>
-            <!-- บันทึกแยกตามประเภท -->
+            <!-- รายการท่าทาง (แบบแถวคล้ายรูปต้นแบบพร้อม Accordion เปิด/ปิดกราฟ) -->
             <?php foreach ($grouped as $code => $group): ?>
-                <div class="card">
-                    <div class="card-header">
-                        <h2>
-                            <span class="badge badge-<?= $group['category'] ?>"><?= $group['category'] == 'fall' ? 'การล้ม' : ($group['category'] == 'adl' ? 'ADL' : 'อื่นๆ') ?></span>
-                            <?= htmlspecialchars($group['name']) ?> (<?= (int)$group['duration_sec'] ?> วินาที)
-                        </h2>
-                        <span style="font-size:13px;color:var(--text-secondary)"><?= count($group['records']) ?> รายการ</span>
-                    </div>
+                <?php
+                $groupKey = preg_replace('/[^A-Za-z0-9_-]/', '_', $code);
+                $recCount = count($group['records']);
+                $latestRec = $group['records'][$recCount - 1];
+                $hasRecording = false;
+                $hasCompleted = false;
+                $activeRecId = 0;
+                $activePts = 0;
 
-                    <?php
-                    $chartKey = preg_replace('/[^A-Za-z0-9_-]/', '_', $code);
-                    $initialRecord = $group['records'][0];
-                    foreach ($group['records'] as $candidateRecord) {
-                        if ((int)$candidateRecord['data_points'] > 0) {
-                            $initialRecord = $candidateRecord;
-                            break;
-                        }
+                foreach ($group['records'] as $r) {
+                    if ($r['status'] === 'recording') {
+                        $hasRecording = true;
+                        $activeRecId = (int)$r['id'];
+                        $activePts = (int)$r['data_points'];
+                        break;
                     }
-                    $initialRecordTitle = 'รอบ #' . $initialRecord['trial_number'];
-                    if ($initialRecord['trial_label']) {
-                        $initialRecordTitle .= ' - ' . $initialRecord['trial_label'];
+                    if ((int)$r['data_points'] > 0) {
+                        $hasCompleted = true;
                     }
-                    ?>
-
-                    <!-- ตาราง -->
-                    <div class="table-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>ลำดับ</th>
-                                    <th>อุปกรณ์</th>
-                                    <th>รอบทดสอบ</th>
-                                    <th>จุดข้อมูล</th>
-                                    <th>หมายเหตุ</th>
-                                    <th>วันที่</th>
-                                    <th>การดำเนินการ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($group['records'] as $r): ?>
-                                    <?php
-                                    $recordTitle = 'รอบ #' . $r['trial_number'];
-                                    if ($r['trial_label']) {
-                                        $recordTitle .= ' - ' . $r['trial_label'];
-                                    }
-                                    $pts = (int)$r['data_points'];
-                                    $isWaitingEsp = ($r['status'] === 'recording');
-                                    $isDone = ($r['status'] === 'completed' && $pts > 0);
-                                    $isCancelled = ($r['status'] === 'cancelled');
-                                    ?>
-                                    <tr class="record-row<?= ((int)$r['id'] === (int)$initialRecord['id']) ? ' selected-record' : '' ?>"
-                                        data-chart-key="<?= htmlspecialchars($chartKey) ?>"
-                                        data-record-id="<?= (int)$r['id'] ?>"
-                                        data-record-title="<?= htmlspecialchars($recordTitle) ?>"
-                                        data-record-status="<?= htmlspecialchars($r['status']) ?>"
-                                        data-record-points="<?= $pts ?>">
-                                        <td>#<?= $r['trial_number'] ?></td>
-                                        <td><?= htmlspecialchars($r['device_name']) ?></td>
-                                        <td>
-                                            <?php if ($r['trial_label']): ?>
-                                                <span class="badge badge-recording"><?= htmlspecialchars($r['trial_label']) ?></span>
-                                            <?php else: ?>
-                                                <span style="color:var(--text-secondary);font-size:12px">-</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td id="pts_cell_<?= (int)$r['id'] ?>"><?= number_format($pts) ?></td>
-                                        <td style="font-size:12px;color:var(--text-secondary)"><?= htmlspecialchars($r['notes'] ?? '-') ?></td>
-                                        <td style="font-size:12px"><?= date('d/m/Y H:i', strtotime($r['created_at'])) ?></td>
-                                        <td id="action_cell_<?= (int)$r['id'] ?>" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                                            <?php if ($isWaitingEsp): ?>
-                                                <span class="badge badge-recording pulse-wait" id="status_badge_<?= (int)$r['id'] ?>">
-                                                    <?= $pts > 0 ? '📥 กำลังรับข้อมูล (' . number_format($pts) . ' จุด)...' : '⏳ รอ ESP32 ส่งข้อมูล...' ?>
-                                                </span>
-                                                <button class="btn btn-danger btn-sm" onclick="stopCommand(<?= (int)$r['id'] ?>)" title="สั่งให้ ESP32 หยุดบันทึกและปิดรอบทันที" style="background:#ef4444;color:#fff;border-color:#dc2626;">⏹️ หยุดบันทึก</button>
-                                                <button class="btn btn-outline btn-sm" onclick="cancelCommand(<?= (int)$r['id'] ?>)" title="ยกเลิกการรอรับข้อมูลจาก ESP32">✘ ยกเลิก</button>
-                                            <?php elseif ($isDone): ?>
-                                                <span class="badge badge-adl" id="status_badge_<?= (int)$r['id'] ?>">✔ เสร็จสิ้น</span>
-                                                <button class="btn btn-outline btn-sm" onclick="sendCommand(<?= (int)$r['id'] ?>, true)" title="ส่งคำสั่งบันทึกใหม่ไปที่ ESP32">📡 ส่งคำสั่งซ้ำ</button>
-                                            <?php elseif ($isCancelled): ?>
-                                                <span class="badge badge-fall" id="status_badge_<?= (int)$r['id'] ?>">✘ ยกเลิก</span>
-                                                <button class="btn btn-primary btn-sm" onclick="sendCommand(<?= (int)$r['id'] ?>, false)" title="ส่งคำสั่งเริ่มบันทึกไปที่ ESP32">📡 ส่งคำสั่ง</button>
-                                            <?php else: ?>
-                                                <span class="badge badge-other" id="status_badge_<?= (int)$r['id'] ?>">⚪ รอส่งคำสั่ง</span>
-                                                <button class="btn btn-primary btn-sm" onclick="sendCommand(<?= (int)$r['id'] ?>, false)" title="ส่งคำสั่งเริ่มบันทึกไปที่ ESP32">📡 ส่งคำสั่ง</button>
-                                            <?php endif; ?>
-                                            <a href="record.php?id=<?= (int)$r['id'] ?>" class="btn btn-outline btn-sm" title="ดูกราฟละเอียด">📈</a>
-                                            <button class="btn btn-danger btn-sm" onclick="confirmDeleteRecord(<?= (int)$r['id'] ?>)" title="ลบบันทึก">🗑️</button>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- กราฟ Preview: แสดงกราฟตามรายการที่เลือก (ถ้ามีข้อมูล) -->
-                    <?php 
-                    $firstRecord = $initialRecord;
-                    if ((int)$firstRecord['data_points'] > 0):
-                    ?>
-                        <div style="margin-top:16px">
-                            <div class="chart-container">
-                                <h3 id="accel_title_<?= htmlspecialchars($chartKey) ?>" style="color:#000000">ตัวอย่างกราฟ — รอบ #<?= $firstRecord['trial_number'] ?> (ความเร่ง XYZ)</h3>
-                                <canvas id="accel_<?= htmlspecialchars($chartKey) ?>" height="120"></canvas>
-                            </div>
-                            <div class="chart-container">
-                                <h3 id="gyro_title_<?= htmlspecialchars($chartKey) ?>" style="color:#000000">ตัวอย่างกราฟ — รอบ #<?= $firstRecord['trial_number'] ?> (ไจโรสโคป XYZ)</h3>
-                                <canvas id="gyro_<?= htmlspecialchars($chartKey) ?>" height="120"></canvas>
-                            </div>
+                }
+                $targetSendRecId = $activeRecId > 0 ? $activeRecId : (int)$latestRec['id'];
+                ?>
+                <div class="posture-card" id="posture_card_<?= $groupKey ?>">
+                    <div class="posture-header-row">
+                        <!-- ฝั่งซ้าย: ป้ายกำกับ + ชื่อท่า + ระยะเวลากำหนด -->
+                        <div class="posture-title-area" onclick="togglePostureAccordion('<?= $groupKey ?>')">
+                            <span class="badge <?= $group['category'] == 'fall' ? 'badge-fall' : 'badge-adl' ?>">
+                                <?= $group['category'] == 'fall' ? 'การล้ม' : 'ADL' ?>
+                            </span>
+                            <span class="posture-title">
+                                <?= htmlspecialchars($group['name']) ?>
+                            </span>
+                            <span style="font-size:12px;color:var(--text-secondary)">
+                                (<?= (int)$group['duration_sec'] ?> วินาที)
+                            </span>
                         </div>
-                        <script>
-                            window.addEventListener('load', () => {
-                                loadSelectedRecordCharts(
-                                    '<?= $chartKey ?>',
-                                    '<?= (int)$firstRecord['id'] ?>',
-                                    <?= json_encode($initialRecordTitle, JSON_UNESCAPED_UNICODE) ?>
-                                );
-                            });
-                        </script>
-                    <?php endif; ?>
+
+                        <!-- ฝั่งขวา: สถานะ + ปุ่มส่งคำสั่ง + ปุ่มดูกราฟ + ปุ่มลบ + จำนวนรายการ -->
+                        <div class="posture-actions-area">
+                            <?php if ($hasRecording): ?>
+                                <span class="badge badge-recording pulse-wait" id="group_status_badge_<?= $activeRecId ?>">
+                                    <?= $activePts > 0 ? '📥 กำลังรับข้อมูล (' . number_format($activePts) . ' จุด)...' : '⏳ รอ ESP32 ส่งข้อมูล...' ?>
+                                </span>
+                                <button class="btn btn-danger btn-sm" onclick="stopCommand(<?= $activeRecId ?>)" title="สั่งให้ ESP32 สรุปข้อมูลและปิดรอบ">⏹️ หยุด</button>
+                                <button class="btn btn-outline btn-sm" onclick="cancelCommand(<?= $activeRecId ?>)" title="ยกเลิกการรอรับข้อมูล">✘ ยกเลิก</button>
+                            <?php elseif ($hasCompleted): ?>
+                                <span class="badge badge-adl">✔ เสร็จสิ้น</span>
+                                <button class="btn btn-primary btn-sm" onclick="sendCommand(<?= $targetSendRecId ?>, true)" title="ส่งคำสั่งเริ่มบันทึกใหม่ไปที่ ESP32">📡 ส่งคำสั่ง</button>
+                            <?php else: ?>
+                                <span class="badge badge-other">⚪ รอส่งคำสั่ง</span>
+                                <button class="btn btn-primary btn-sm" onclick="sendCommand(<?= $targetSendRecId ?>, false)" title="ส่งคำสั่งเริ่มบันทึกไปที่ ESP32">📡 ส่งคำสั่ง</button>
+                            <?php endif; ?>
+
+                            <button class="btn btn-outline btn-sm btn-icon" id="btn_acc_<?= $groupKey ?>" onclick="togglePostureAccordion('<?= $groupKey ?>')" title="เปิด/ปิดดูรายการและกราฟ">
+                                📈
+                            </button>
+
+                            <button class="btn btn-danger btn-sm btn-icon" onclick="confirmDeletePosture(<?= (int)$group['fall_type_id'] ?>, '<?= htmlspecialchars($group['name']) ?>')" title="ลบรายการท่านี้ทั้งหมด">
+                                🗑️
+                            </button>
+
+                            <span class="count-badge"><?= $recCount ?> รายการ</span>
+                        </div>
+                    </div>
+
+                    <!-- Accordion Dropdown: แสดงตารางไฟล์บันทึกในท่านี้ (กดเปิด/ปิดกราฟของแต่ละไฟล์ได้) -->
+                    <div id="accordion_<?= $groupKey ?>" class="posture-accordion">
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width:80px">รอบที่</th>
+                                        <th>อุปกรณ์</th>
+                                        <th>จำนวนจุดข้อมูล</th>
+                                        <th>วันที่บันทึก</th>
+                                        <th>สถานะ</th>
+                                        <th style="text-align:right">การดำเนินการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($group['records'] as $r): ?>
+                                        <?php
+                                        $rid = (int)$r['id'];
+                                        $pts = (int)$r['data_points'];
+                                        $isRec = ($r['status'] === 'recording');
+                                        $isDone = ($pts > 0);
+                                        ?>
+                                        <tr class="trial-row" id="trial_row_<?= $rid ?>" data-record-id="<?= $rid ?>" data-record-status="<?= htmlspecialchars($r['status']) ?>" data-record-points="<?= $pts ?>">
+                                            <td style="font-weight:700">#<?= $r['trial_number'] ?></td>
+                                            <td><?= htmlspecialchars($r['device_name']) ?></td>
+                                            <td id="pts_cell_<?= $rid ?>"><?= number_format($pts) ?> จุด</td>
+                                            <td style="font-size:12px"><?= date('d/m/Y H:i', strtotime($r['created_at'])) ?></td>
+                                            <td>
+                                                <?php if ($isRec): ?>
+                                                    <span class="badge badge-recording pulse-wait" id="status_badge_<?= $rid ?>">
+                                                        <?= $pts > 0 ? '📥 กำลังรับข้อมูล...' : '⏳ รอ ESP32...' ?>
+                                                    </span>
+                                                <?php elseif ($isDone): ?>
+                                                    <span class="badge badge-adl" id="status_badge_<?= $rid ?>">✔ เสร็จสิ้น</span>
+                                                <?php else: ?>
+                                                    <span class="badge badge-other" id="status_badge_<?= $rid ?>">⚪ รอส่งคำสั่ง</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td style="text-align:right;white-space:nowrap;display:flex;justify-content:flex-end;gap:6px;align-items:center;">
+                                                <?php if ($isDone): ?>
+                                                    <button class="btn btn-outline btn-sm" id="btn_chart_<?= $rid ?>" onclick="toggleTrialChart(<?= $rid ?>, <?= $r['trial_number'] ?>, '<?= htmlspecialchars($group['name']) ?>')">
+                                                        📈 ดูกราฟ
+                                                    </button>
+                                                    <button class="btn btn-outline btn-sm" onclick="sendCommand(<?= $rid ?>, true)" title="ส่งคำสั่งซ้ำเพื่อบันทึกทับรอบนี้">📡 ส่งคำสั่งซ้ำ</button>
+                                                    <a href="api/actions.php?action=export_sensor_data&record_id=<?= $rid ?>" class="btn btn-outline btn-sm" title="ส่งออก CSV">📥 CSV</a>
+                                                <?php elseif ($isRec): ?>
+                                                    <button class="btn btn-danger btn-sm" onclick="stopCommand(<?= $rid ?>)">⏹️ หยุด</button>
+                                                    <button class="btn btn-outline btn-sm" onclick="cancelCommand(<?= $rid ?>)">✘ ยกเลิก</button>
+                                                <?php else: ?>
+                                                    <button class="btn btn-primary btn-sm" onclick="sendCommand(<?= $rid ?>, false)">📡 ส่งคำสั่ง</button>
+                                                <?php endif; ?>
+                                                <button class="btn btn-danger btn-sm" onclick="confirmDeleteRecord(<?= $rid ?>)" title="ลบรอบนี้">🗑️</button>
+                                            </td>
+                                        </tr>
+
+                                        <!-- ส่วนแสดงกราฟของไฟล์รอบนี้ (เปิด/ปิดอิสระ เพื่อไม่ให้ต้องเลื่อนยาว) -->
+                                        <tr id="chart_row_<?= $rid ?>" class="chart-collapse-row" style="display:none;">
+                                            <td colspan="6" style="padding:16px 20px;">
+                                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                                                    <h4 style="margin:0;color:var(--accent);font-size:15px;">
+                                                        📊 กราฟข้อมูลรอบที่ #<?= $r['trial_number'] ?> — <?= htmlspecialchars($group['name']) ?>
+                                                        <span style="font-weight:normal;color:var(--text-secondary);font-size:13px">(<span id="chart_pts_label_<?= $rid ?>"><?= number_format($pts) ?></span> จุดข้อมูล)</span>
+                                                    </h4>
+                                                    <button class="btn btn-outline btn-sm" onclick="toggleTrialChart(<?= $rid ?>)">✖ ปิดกราฟ</button>
+                                                </div>
+                                                <div style="display:grid;grid-template-columns:1fr;gap:14px;">
+                                                    <div class="chart-container" style="margin-bottom:0;background:#ffffff;border-radius:10px;padding:14px;">
+                                                        <h5 style="color:#000000;margin-bottom:6px;font-size:13px;font-weight:700;">แรงเร่งความเร่ง (Accelerometer X, Y, Z และแรงลัพธ์ G)</h5>
+                                                        <canvas id="accel_canvas_<?= $rid ?>" height="110"></canvas>
+                                                    </div>
+                                                    <div class="chart-container" style="margin-bottom:0;background:#ffffff;border-radius:10px;padding:14px;">
+                                                        <h5 style="color:#000000;margin-bottom:6px;font-size:13px;font-weight:700;">ความเร็วเชิงมุม (Gyroscope X, Y, Z — rad/s)</h5>
+                                                        <canvas id="gyro_canvas_<?= $rid ?>" height="110"></canvas>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
     </div>
 
-    <!-- Modal เพิ่มบันทึก -->
+    <!-- Modal เพิ่มบันทึก (ปรับตามข้อกำหนด: เหลือแค่ เลือกท่า + เลือกอุปกรณ์ + ปุ่มสร้าง) -->
     <div class="modal-overlay" id="addRecordModal">
         <div class="modal">
             <h2>+ เพิ่มบันทึกข้อมูล</h2>
@@ -406,7 +461,7 @@ $trials = $trials->fetchAll();
                 <input type="hidden" name="subject_id" value="<?= $id ?>">
 
                 <div class="form-group">
-                    <label>ประเภทท่าทาง *</label>
+                    <label>เลือกประเภทท่าทาง *</label>
                     <select name="fall_type_id" id="fallTypeSelect" required>
                         <?php foreach ($fallTypeSelectGroups as $group): ?>
                             <optgroup label="<?= htmlspecialchars($group['label']) ?>">
@@ -421,58 +476,20 @@ $trials = $trials->fetchAll();
                 </div>
 
                 <div class="form-group">
-                    <label>อุปกรณ์ *</label>
+                    <label>เลือกอุปกรณ์ ESP32 *</label>
                     <select name="device_id" required>
                         <?php if (empty($devices)): ?>
-                            <option value="" disabled>— ยังไม่มีอุปกรณ์ กรุณาเพิ่มที่หน้าอุปกรณ์ —</option>
+                            <option value="" disabled>— ยังไม่มีอุปกรณ์ กรุณาเพิ่มที่เมนูอุปกรณ์ก่อน —</option>
                         <?php endif; ?>
                         <?php foreach ($devices as $d): ?>
-                            <option value="<?= $d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option>
+                            <option value="<?= $d['id'] ?>"><?= htmlspecialchars($d['name']) ?> (<?= htmlspecialchars($d['mac_address']) ?>)</option>
                         <?php endforeach; ?>
                     </select>
-                </div>
-
-                <div class="form-group">
-                    <label>รอบทดสอบ (Trial)</label>
-                    <select name="trial_id">
-                        <option value="">— ไม่ระบุ —</option>
-                        <?php foreach ($trials as $tr): ?>
-                            <option value="<?= $tr['id'] ?>"><?= htmlspecialchars($tr['trial_label'] ?: 'Trial #' . $tr['id']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ลำดับในรอบ</label>
-                        <input type="number" name="trial_number" value="1" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label>โหมดระยะเวลาบันทึก</label>
-                        <select name="duration_mode" id="durationModeSelect">
-                            <option value="auto" selected>⏱️ ตามมาตรฐานท่าทาง (12s / 15s / 25s)</option>
-                            <option value="60">⏳ บันทึกยาวพิเศษ 60 วินาที (60s Long)</option>
-                            <option value="continuous">🔴 บันทึกต่อเนื่องไม่จำกัดเวลา (กดเริ่ม - กดหยุดด้วยมือ)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>การดำเนินการเริ่มต้น</label>
-                    <select name="status">
-                        <option value="pending" selected>⚪ รอส่งคำสั่ง (กดปุ่มส่งคำสั่งในตาราง)</option>
-                        <option value="recording">📡 ส่งคำสั่งไปยัง ESP32 ทันที</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>หมายเหตุ</label>
-                    <textarea name="notes" rows="2" placeholder="บันทึกเพิ่มเติม..."></textarea>
                 </div>
 
                 <div class="modal-actions">
                     <button type="button" class="btn btn-outline" onclick="closeModal('addRecordModal')">ยกเลิก</button>
-                    <button type="submit" class="btn btn-primary">✓ เพิ่มบันทึก</button>
+                    <button type="submit" class="btn btn-primary">✓ สร้างรายการ</button>
                 </div>
             </form>
         </div>
@@ -481,147 +498,86 @@ $trials = $trials->fetchAll();
     <script>
         function openModal(id) {
             const modal = document.getElementById(id);
-            modal.classList.add('active');
-            if (id === 'addRecordModal') {
-                const statusSelect = modal.querySelector('select[name="status"]');
-                if (statusSelect) statusSelect.value = 'pending';
+            if (modal) modal.classList.add('active');
+        }
+        function closeModal(id) {
+            const modal = document.getElementById(id);
+            if (modal) modal.classList.remove('active');
+        }
+
+        // เปิด/ปิด Accordion ของกลุ่มท่าทาง
+        function togglePostureAccordion(groupKey) {
+            const acc = document.getElementById('accordion_' + groupKey);
+            const btn = document.getElementById('btn_acc_' + groupKey);
+            if (!acc) return;
+            const isOpen = acc.classList.contains('open');
+            if (isOpen) {
+                acc.classList.remove('open');
+                if (btn) btn.classList.remove('btn-primary');
+            } else {
+                acc.classList.add('open');
+                if (btn) btn.classList.add('btn-primary');
             }
         }
-        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
-        const selectedRecordDataCache = new Map();
-        const selectedRecordRequestToken = new Map();
-        const chartStyles = [
-            { borderDash: [], pointStyle: 'circle' },
-            { borderDash: [8, 4], pointStyle: 'rectRot' },
-            { borderDash: [2, 4], pointStyle: 'triangle' },
-            { borderDash: [10, 3, 2, 3], pointStyle: 'star' }
-        ];
-        const chartTextColor = '#000000';
-        const chartFontFamily = "'Noto Sans Thai', 'Segoe UI', sans-serif";
-        const chartLegendFont = { family: chartFontFamily, size: 11, weight: '700' };
-        const chartTickFont = { family: chartFontFamily, size: 10, weight: '700' };
+        // จัดการแคชข้อมูลกราฟและอ็อบเจ็กต์ Chart.js
+        const chartDataCache = new Map();
+        const activeCharts = new Map();
 
-        if (window.Chart) {
-            Chart.defaults.color = chartTextColor;
-            Chart.defaults.font.family = chartFontFamily;
-            Chart.defaults.font.weight = '700';
-        }
+        const chartColors = {
+            ax: '#ff6384',
+            ay: '#36a2eb',
+            az: '#ffce56',
+            g:  '#111827',
+            gx: '#ff9f40',
+            gy: '#4bc0c0',
+            gz: '#9966ff'
+        };
 
-        function clearChartCanvas(canvas) {
-            if (!canvas) return;
-            if (!window.Chart) return;
-            const existingChart = Chart.getChart(canvas);
-            if (existingChart) existingChart.destroy();
-            canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-        }
+        // เปิด/ปิด กราฟของไฟล์รอบที่ระบุ
+        async function toggleTrialChart(recordId, trialNum = 0, postureName = '') {
+            const row = document.getElementById('chart_row_' + recordId);
+            const btn = document.getElementById('btn_chart_' + recordId);
+            if (!row) return;
 
-        function getChartStatusElement(chartKey) {
-            let status = document.getElementById('chart_status_' + chartKey);
-            if (status) return status;
-
-            const gyroCanvas = document.getElementById('gyro_' + chartKey);
-            status = document.createElement('p');
-            status.id = 'chart_status_' + chartKey;
-            status.className = 'chart-status';
-            status.hidden = true;
-            if (gyroCanvas) gyroCanvas.insertAdjacentElement('afterend', status);
-            return status;
-        }
-
-        function makeSelectedDataset(label, values, borderColor, styleIndex, pointInterval) {
-            return {
-                label,
-                data: values,
-                borderColor,
-                backgroundColor: borderColor,
-                pointBorderColor: borderColor,
-                pointBackgroundColor: borderColor,
-                borderDash: chartStyles[styleIndex].borderDash,
-                pointStyle: chartStyles[styleIndex].pointStyle,
-                pointRadius: ctx => ctx.dataIndex % pointInterval === 0 ? 3 : 0,
-                pointHoverRadius: 5,
-                pointHitRadius: 8,
-                tension: 0.12
-            };
-        }
-
-        function createSelectedChart(canvas, labels, datasets) {
-            if (!window.Chart) return null;
-            clearChartCanvas(canvas);
-            return new Chart(canvas, {
-                type: 'line',
-                data: { labels, datasets },
-                options: {
-                    responsive: true,
-                    animation: false,
-                    plugins: {
-                        legend: {
-                            labels: {
-                                color: chartTextColor,
-                                font: chartLegendFont,
-                                usePointStyle: true,
-                                pointStyleWidth: 12
-                            }
-                        },
-                        tooltip: {
-                            titleColor: chartTextColor,
-                            bodyColor: chartTextColor,
-                            footerColor: chartTextColor,
-                            titleFont: chartLegendFont,
-                            bodyFont: chartLegendFont,
-                            footerFont: chartLegendFont
-                        }
-                    },
-                    scales: {
-                        x: { display: true, ticks: { color: chartTextColor, maxTicksLimit: 10, font: chartTickFont }, grid: { color: '#2a2a4a' }, title: { display: true, text: 'เวลา (วินาที)', color: chartTextColor, font: chartLegendFont } },
-                        y: { ticks: { color: chartTextColor, font: chartTickFont }, grid: { color: '#2a2a4a' } }
-                    },
-                    elements: { line: { borderWidth: 1.8 } }
-                }
-            });
-        }
-
-        async function loadSelectedRecordCharts(chartKey, recordId, recordTitle) {
-            const accelCanvas = document.getElementById('accel_' + chartKey);
-            const gyroCanvas = document.getElementById('gyro_' + chartKey);
-            if (!accelCanvas || !gyroCanvas) return;
-
-            const accelTitle = document.getElementById('accel_title_' + chartKey);
-            const gyroTitle = document.getElementById('gyro_title_' + chartKey);
-            const status = getChartStatusElement(chartKey);
-            const token = Symbol(recordId);
-            selectedRecordRequestToken.set(chartKey, token);
-
-            if (accelTitle) accelTitle.textContent = 'ตัวอย่างกราฟ — ' + recordTitle + ' (ความเร่ง XYZ)';
-            if (gyroTitle) gyroTitle.textContent = 'ตัวอย่างกราฟ — ' + recordTitle + ' (ไจโรสโคป XYZ)';
-            if (!window.Chart) {
-                status.textContent = 'ไม่สามารถโหลดไลบรารีกราฟได้';
-                status.hidden = false;
+            const isShown = row.style.display !== 'none';
+            if (isShown) {
+                row.style.display = 'none';
+                if (btn) btn.textContent = '📈 ดูกราฟ';
                 return;
             }
-            status.textContent = 'กำลังโหลดข้อมูลกราฟ...';
-            status.hidden = false;
+
+            row.style.display = 'table-row';
+            if (btn) btn.textContent = '📉 ปิดกราฟ';
+
+            // หากเคยวาดกราฟรอบนี้แล้ว ไม่ต้อง fetch ใหม่
+            if (activeCharts.has(recordId)) return;
+
+            const accelCanvas = document.getElementById('accel_canvas_' + recordId);
+            const gyroCanvas = document.getElementById('gyro_canvas_' + recordId);
+            if (!accelCanvas || !gyroCanvas) return;
 
             try {
-                if (!selectedRecordDataCache.has(recordId)) {
-                    const response = await fetch('api/actions.php?action=get_sensor_data&record_id=' + encodeURIComponent(recordId));
-                    selectedRecordDataCache.set(recordId, await response.json());
+                let resData;
+                if (chartDataCache.has(recordId)) {
+                    resData = chartDataCache.get(recordId);
+                } else {
+                    const res = await fetch('api/actions.php?action=get_sensor_data&record_id=' + encodeURIComponent(recordId));
+                    resData = await res.json();
+                    if (resData.success) {
+                        chartDataCache.set(recordId, resData);
+                    }
                 }
-                if (selectedRecordRequestToken.get(chartKey) !== token) return;
 
-                const result = selectedRecordDataCache.get(recordId);
-                if (!result.success || !result.data.length) {
-                    clearChartCanvas(accelCanvas);
-                    clearChartCanvas(gyroCanvas);
-                    status.textContent = 'ไม่มีข้อมูลเซ็นเซอร์สำหรับรายการนี้';
-                    status.hidden = false;
+                if (!resData || !resData.success || !resData.data.length) {
+                    accelCanvas.parentElement.innerHTML = '<p style="color:#666;font-size:13px;padding:12px;">ไม่มีข้อมูลเซ็นเซอร์</p>';
                     return;
                 }
 
-                const d = result.data;
+                const d = resData.data;
                 const labels = d.map(p => (Number(p.timestamp_ms) / 1000).toFixed(2));
-                const pointInterval = Math.max(1, Math.ceil(d.length / 24));
+                const pointInterval = Math.max(1, Math.ceil(d.length / 25));
+
                 const gValues = d.map(p => {
                     const ax = Number(p.accel_x);
                     const ay = Number(p.accel_y);
@@ -629,42 +585,66 @@ $trials = $trials->fetchAll();
                     return Math.sqrt(ax * ax + ay * ay + az * az) / 9.81;
                 });
 
-                createSelectedChart(accelCanvas, labels, [
-                    makeSelectedDataset('Accel X', d.map(p => Number(p.accel_x)), '#ff6384', 0, pointInterval),
-                    makeSelectedDataset('Accel Y', d.map(p => Number(p.accel_y)), '#36a2eb', 1, pointInterval),
-                    makeSelectedDataset('Accel Z', d.map(p => Number(p.accel_z)), '#ffce56', 2, pointInterval),
-                    makeSelectedDataset('G', gValues, '#000000', 3, pointInterval)
-                ]);
-                createSelectedChart(gyroCanvas, labels, [
-                    makeSelectedDataset('Gyro X', d.map(p => Number(p.gyro_x)), '#ff9f40', 0, pointInterval),
-                    makeSelectedDataset('Gyro Y', d.map(p => Number(p.gyro_y)), '#4bc0c0', 1, pointInterval),
-                    makeSelectedDataset('Gyro Z', d.map(p => Number(p.gyro_z)), '#9966ff', 2, pointInterval)
-                ]);
-                status.hidden = true;
-            } catch (error) {
-                if (selectedRecordRequestToken.get(chartKey) !== token) return;
-                clearChartCanvas(accelCanvas);
-                clearChartCanvas(gyroCanvas);
-                status.textContent = 'ไม่สามารถโหลดข้อมูลกราฟได้';
-                status.hidden = false;
+                const commonOptions = {
+                    responsive: true,
+                    animation: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#000000',
+                                font: { family: "'Noto Sans Thai', sans-serif", size: 11, weight: '700' },
+                                usePointStyle: true
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#000000', maxTicksLimit: 12, font: { weight: '600', size: 10 } },
+                            grid: { color: '#e5e7eb' },
+                            title: { display: true, text: 'เวลา (วินาที)', color: '#000000', font: { weight: '700' } }
+                        },
+                        y: {
+                            ticks: { color: '#000000', font: { weight: '600', size: 10 } },
+                            grid: { color: '#e5e7eb' }
+                        }
+                    },
+                    elements: { line: { borderWidth: 1.8 } }
+                };
+
+                const accelChart = new Chart(accelCanvas, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [
+                            { label: 'Accel X', data: d.map(p => Number(p.accel_x)), borderColor: chartColors.ax, backgroundColor: chartColors.ax, pointRadius: ctx => ctx.dataIndex % pointInterval === 0 ? 2.5 : 0, tension: 0.1 },
+                            { label: 'Accel Y', data: d.map(p => Number(p.accel_y)), borderColor: chartColors.ay, backgroundColor: chartColors.ay, pointRadius: ctx => ctx.dataIndex % pointInterval === 0 ? 2.5 : 0, tension: 0.1 },
+                            { label: 'Accel Z', data: d.map(p => Number(p.accel_z)), borderColor: chartColors.az, backgroundColor: chartColors.az, pointRadius: ctx => ctx.dataIndex % pointInterval === 0 ? 2.5 : 0, tension: 0.1 },
+                            { label: 'G (รวม)', data: gValues, borderColor: chartColors.g, backgroundColor: chartColors.g, borderDash: [4, 4], pointRadius: ctx => ctx.dataIndex % pointInterval === 0 ? 2.5 : 0, tension: 0.1 }
+                        ]
+                    },
+                    options: commonOptions
+                });
+
+                const gyroChart = new Chart(gyroCanvas, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [
+                            { label: 'Gyro X', data: d.map(p => Number(p.gyro_x)), borderColor: chartColors.gx, backgroundColor: chartColors.gx, pointRadius: ctx => ctx.dataIndex % pointInterval === 0 ? 2.5 : 0, tension: 0.1 },
+                            { label: 'Gyro Y', data: d.map(p => Number(p.gyro_y)), borderColor: chartColors.gy, backgroundColor: chartColors.gy, pointRadius: ctx => ctx.dataIndex % pointInterval === 0 ? 2.5 : 0, tension: 0.1 },
+                            { label: 'Gyro Z', data: d.map(p => Number(p.gyro_z)), borderColor: chartColors.gz, backgroundColor: chartColors.gz, pointRadius: ctx => ctx.dataIndex % pointInterval === 0 ? 2.5 : 0, tension: 0.1 }
+                        ]
+                    },
+                    options: commonOptions
+                });
+
+                activeCharts.set(recordId, { accelChart, gyroChart });
+            } catch (err) {
+                console.error('Chart load error:', err);
             }
         }
 
-        document.querySelectorAll('.record-row').forEach(row => {
-            row.addEventListener('click', event => {
-                if (event.target.closest('a, button')) return;
-
-                const chartKey = row.dataset.chartKey;
-                document.querySelectorAll('.record-row').forEach(otherRow => {
-                    if (otherRow.dataset.chartKey === chartKey) {
-                        otherRow.classList.toggle('selected-record', otherRow === row);
-                    }
-                });
-                loadSelectedRecordCharts(chartKey, row.dataset.recordId, row.dataset.recordTitle);
-            });
-        });
-
-        // Submit เพิ่มบันทึก
+        // สร้างรายการบันทึกใหม่
         document.getElementById('addRecordForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const form = new FormData(this);
@@ -674,15 +654,16 @@ $trials = $trials->fetchAll();
             if (data.success) {
                 location.reload();
             } else {
-                showError('ข้อผิดพลาด: ' + data.error);
+                showError('ข้อผิดพลาด: ' + (data.error || 'ไม่สามารถสร้างรายการได้'));
             }
         });
 
+        // ส่งคำสั่งเริ่มบันทึกไปยัง ESP32
         async function sendCommand(id, hasExistingData = false) {
             if (hasExistingData) {
                 const confirmed = await confirmAction({
-                    title: 'ส่งคำสั่งบันทึกซ้ำ?',
-                    text: 'ข้อมูลเซ็นเซอร์เดิมของรอบนี้จะถูกล้าง เพื่อรอรับข้อมูลชุดใหม่จาก ESP32',
+                    title: 'ส่งคำสั่งเริ่มรอบใหม่?',
+                    text: 'ข้อมูลเดิมของรอบนี้จะถูกล้างเพื่อเตรียมรับข้อมูลชุดใหม่จาก ESP32',
                     confirmButtonText: '📡 ส่งคำสั่ง'
                 });
                 if (!confirmed) return;
@@ -712,15 +693,12 @@ $trials = $trials->fetchAll();
 
         async function stopCommand(id) {
             const confirmed = await confirmAction({
-                title: 'หยุดบันทึกข้อมูลรอบนี้?',
-                text: 'ระบบจะสั่งให้ ESP32 สรุปข้อมูลที่บันทึกได้และปิดรอบทันที',
-                confirmButtonText: '⏹️ สั่งหยุดบันทึก',
+                title: 'สั่งหยุดบันทึกรอบนี้?',
+                text: 'ESP32 จะบันทึกจุดสุดท้ายและสรุปผลเป็นเสร็จสิ้นทันที',
+                confirmButtonText: '⏹️ สั่งหยุด',
                 confirmButtonColor: '#ef4444'
             });
             if (!confirmed) return;
-
-            const badge = document.getElementById('status_badge_' + id);
-            if (badge) badge.textContent = '⏹️ กำลังส่งคำสั่งหยุดไปยัง ESP32...';
 
             const form = new FormData();
             form.append('id', id);
@@ -731,7 +709,7 @@ $trials = $trials->fetchAll();
                     Swal.fire({
                         icon: 'info',
                         title: 'ส่งคำสั่งหยุดแล้ว',
-                        text: 'ESP32 จะบันทึกจุดสุดท้ายและสรุปสถานะเป็นเสร็จสิ้น',
+                        text: 'ESP32 จะสรุปสถานะเป็นเสร็จสิ้น',
                         timer: 1500,
                         showConfirmButton: false
                     });
@@ -741,9 +719,9 @@ $trials = $trials->fetchAll();
             }
         }
 
-        // ระบบตรวจสอบสถานะอัตโนมัติเมื่ออยู่ในโหมด "รอ ESP32 ส่งข้อมูล..."
+        // ระบบตรวจสอบสถานะอัตโนมัติ (Polling) เมื่อรอ ESP32 ส่งข้อมูล
         (function startEsp32Polling() {
-            const waitingRows = Array.from(document.querySelectorAll('.record-row[data-record-status="recording"]'));
+            const waitingRows = Array.from(document.querySelectorAll('.trial-row[data-record-status="recording"]'));
             if (waitingRows.length === 0) return;
 
             const waitingIds = new Set(waitingRows.map(r => Number(r.dataset.recordId)));
@@ -755,6 +733,13 @@ $trials = $trials->fetchAll();
                 const rid = Number(r.dataset.recordId);
                 prevPointsMap.set(rid, Number(r.dataset.recordPoints || 0));
                 idleTicksMap.set(rid, 0);
+
+                // เปิด Accordion ของกลุ่มที่มีแถวรออยู่โดยอัตโนมัติ
+                const postureCard = r.closest('.posture-card');
+                if (postureCard) {
+                    const acc = postureCard.querySelector('.posture-accordion');
+                    if (acc) acc.classList.add('open');
+                }
             });
 
             const pollTimer = setInterval(async () => {
@@ -774,16 +759,21 @@ $trials = $trials->fetchAll();
 
                         const pts = Number(rec.data_points || 0);
                         const ptsCell = document.getElementById('pts_cell_' + rid);
-                        if (ptsCell) ptsCell.textContent = pts.toLocaleString();
+                        if (ptsCell) ptsCell.textContent = pts.toLocaleString() + ' จุด';
 
-                        // กรณีที่ 1: ESP32 ส่งข้อมูลครบและเปลี่ยนสถานะเป็น completed แล้ว
+                        const groupBadge = document.getElementById('group_status_badge_' + rid);
+                        if (groupBadge) {
+                            groupBadge.textContent = pts > 0 ? `📥 กำลังรับข้อมูล (${pts.toLocaleString()} จุด)...` : '⏳ รอ ESP32 ส่งข้อมูล...';
+                        }
+
+                        // ESP32 ส่งจบแล้วและสถานะเป็น completed
                         if (rec.status === 'completed' && pts > 0) {
                             clearInterval(pollTimer);
                             if (window.Swal) {
                                 await Swal.fire({
                                     icon: 'success',
                                     title: 'เสร็จสิ้น!',
-                                    text: `ได้รับข้อมูลจาก ESP32 จำนวน ${pts.toLocaleString()} จุดข้อมูลเรียบร้อยแล้ว`,
+                                    text: `ได้รับข้อมูลจาก ESP32 ครบถ้วนจำนวน ${pts.toLocaleString()} จุดข้อมูล`,
                                     timer: 1800,
                                     showConfirmButton: false
                                 });
@@ -792,12 +782,7 @@ $trials = $trials->fetchAll();
                             return;
                         }
 
-                        // กรณีที่ 2: กำลังทยอยรับข้อมูลจาก ESP32 (หรือเฟิร์มแวร์รุ่นที่ไม่ส่ง is_final)
                         if (rec.status === 'recording' && pts > 0) {
-                            const badge = document.getElementById('status_badge_' + rid);
-                            if (badge) {
-                                badge.textContent = `📥 กำลังรับข้อมูล (${pts.toLocaleString()} จุด)...`;
-                            }
                             const prevPts = prevPointsMap.get(rid) || 0;
                             if (pts > prevPts) {
                                 prevPointsMap.set(rid, pts);
@@ -806,7 +791,6 @@ $trials = $trials->fetchAll();
                                 const ticks = (idleTicksMap.get(rid) || 0) + 1;
                                 idleTicksMap.set(rid, ticks);
                                 if (ticks >= 2) {
-                                    // ข้อมูลนิ่งครบ 2 รอบการเช็ค (~4 วินาที) ให้เปลี่ยนสถานะเป็นเสร็จสิ้นอัตโนมัติ
                                     finalizeTargetId = rid;
                                 }
                             }
@@ -815,48 +799,68 @@ $trials = $trials->fetchAll();
                 } catch (err) {
                     console.warn('Polling error:', err);
                 }
-            }, 2000);
+            }, 1500);
         })();
 
-        async function confirmDeleteRecord(id) {
+        // ลบทั้งกลุ่มท่าทาง
+        async function confirmDeletePosture(fallTypeId, postureName) {
             const confirmed = await confirmAction({
-                title: 'ลบบันทึกนี้?',
-                text: 'ข้อมูลบันทึกและข้อมูลเซ็นเซอร์ที่เกี่ยวข้องจะถูกลบด้วย',
-                confirmButtonText: 'ลบ'
+                title: 'ลบรายการท่านี้ทั้งหมด?',
+                text: `ข้อมูลบันทึกและเซ็นเซอร์ทั้งหมดของ "${postureName}" สำหรับผู้ทดสอบนี้จะถูกลบ`,
+                confirmButtonText: 'ลบทั้งหมด',
+                confirmButtonColor: '#ef4444'
             });
-            if (confirmed) deleteRecord(id);
-        }
+            if (!confirmed) return;
 
-        async function deleteRecord(id) {
             const form = new FormData();
-            form.append('id', id);
-            const res = await fetch('api/actions.php?action=delete_record', { method: 'POST', body: form });
+            form.append('subject_id', <?= $id ?>);
+            form.append('fall_type_id', fallTypeId);
+            const res = await fetch('api/actions.php?action=delete_posture_records', { method: 'POST', body: form });
             const data = await res.json();
             if (data.success) {
                 location.reload();
             } else {
-                showError('ข้อผิดพลาด: ' + data.error);
+                showError('ข้อผิดพลาด: ' + (data.error || 'ไม่สามารถลบรายการได้'));
             }
         }
 
+        // ลบบันทึกรอบเดี่ยว
+        async function confirmDeleteRecord(id) {
+            const confirmed = await confirmAction({
+                title: 'ลบรอบนี้?',
+                text: 'ข้อมูลบันทึกและข้อมูลเซ็นเซอร์ของรอบนี้จะถูกลบออกจากระบบ',
+                confirmButtonText: 'ลบ'
+            });
+            if (confirmed) {
+                const form = new FormData();
+                form.append('id', id);
+                const res = await fetch('api/actions.php?action=delete_record', { method: 'POST', body: form });
+                const data = await res.json();
+                if (data.success) {
+                    location.reload();
+                } else {
+                    showError('ข้อผิดพลาด: ' + (data.error || 'ไม่สามารถลบได้'));
+                }
+            }
+        }
+
+        // ลบผู้ทดสอบ
         async function confirmDeleteSubject(id) {
             const confirmed = await confirmAction({
                 title: 'ลบผู้ทดสอบนี้?',
-                text: 'ข้อมูลผู้ทดสอบและบันทึกที่เกี่ยวข้องจะถูกลบออกจากระบบ',
+                text: 'ข้อมูลผู้ทดสอบและบันทึกทั้งหมดจะถูกลบออกจากระบบ',
                 confirmButtonText: 'ลบ'
             });
-            if (confirmed) deleteSubject(id);
-        }
-
-        async function deleteSubject(id) {
-            const form = new FormData();
-            form.append('id', id);
-            const res = await fetch('api/actions.php?action=delete_subject', { method: 'POST', body: form });
-            const data = await res.json();
-            if (data.success) {
-                location.href = 'index.php';
-            } else {
-                showError('ข้อผิดพลาด: ' + data.error);
+            if (confirmed) {
+                const form = new FormData();
+                form.append('id', id);
+                const res = await fetch('api/actions.php?action=delete_subject', { method: 'POST', body: form });
+                const data = await res.json();
+                if (data.success) {
+                    location.href = 'index.php';
+                } else {
+                    showError('ข้อผิดพลาด: ' + (data.error || 'ไม่สามารถลบผู้ทดสอบได้'));
+                }
             }
         }
 

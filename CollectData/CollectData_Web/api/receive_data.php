@@ -40,15 +40,21 @@ if (!is_array($samples) || count($samples) === 0) {
 }
 
 try {
-    // Support explicit record_id from firmware or look up active recording for this device
+    // Support explicit record_id from firmware or look up active/pending recording for this device
     $record_id = isset($data['record_id']) && intval($data['record_id']) > 0 ? intval($data['record_id']) : 0;
     if ($record_id <= 0) {
-        $stmt = $pdo->prepare("SELECT id FROM cd_records WHERE device_id = (SELECT id FROM cd_devices WHERE mac_address = ?) AND status = 'recording' ORDER BY created_at DESC LIMIT 1");
+        $stmt = $pdo->prepare("SELECT id FROM cd_records WHERE device_id = (SELECT id FROM cd_devices WHERE mac_address = ?) AND status = 'recording' ORDER BY id DESC LIMIT 1");
         $stmt->execute([$mac]);
         $record = $stmt->fetch();
         if (!$record) {
+            // หากไม่มี ให้หารายการล่าสุดของอุปกรณ์นี้ที่ยังไม่มีข้อมูล (กรณีเริ่มด้วยปุ่ม D18)
+            $stmtPending = $pdo->prepare("SELECT r.id FROM cd_records r WHERE r.device_id = (SELECT id FROM cd_devices WHERE mac_address = ?) AND (SELECT COUNT(*) FROM cd_sensor_data WHERE record_id = r.id) = 0 ORDER BY r.id DESC LIMIT 1");
+            $stmtPending->execute([$mac]);
+            $record = $stmtPending->fetch();
+        }
+        if (!$record) {
             http_response_code(404);
-            echo json_encode(['success'=>false,'error'=>'No active recording for this device']);
+            echo json_encode(['success'=>false,'error'=>'No active or pending recording for this device']);
             exit;
         }
         $record_id = $record['id'];

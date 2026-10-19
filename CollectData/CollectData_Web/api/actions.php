@@ -68,42 +68,48 @@ try {
 
         // ==================== บันทึกการล้ม ====================
         case 'add_record':
-            $trial_id = !empty($_POST['trial_id']) ? intval($_POST['trial_id']) : null;
+            $subject_id = intval($_POST['subject_id'] ?? 0);
+            $fall_type_id = intval($_POST['fall_type_id'] ?? 0);
             $device_id = intval($_POST['device_id'] ?? 0);
             $req_status = $_POST['status'] ?? 'pending';
-            // หากเลือก 'pending' (รอส่งคำสั่ง) ให้เก็บเป็น 'completed' ที่มี 0 จุดข้อมูล เพื่อไม่ต้องแก้ ENUM ใน DB
-            $db_status = ($req_status === 'recording') ? 'recording' : (($req_status === 'cancelled') ? 'cancelled' : 'completed');
+
+            if ($subject_id <= 0 || $fall_type_id <= 0 || $device_id <= 0) {
+                echo json_encode(['success' => false, 'error' => 'กรุณาเลือกท่าทางและอุปกรณ์ให้ครบถ้วน']);
+                break;
+            }
+
+            // คำนวณลำดับรอบอัตโนมัติสำหรับท่านี้ (Auto-increment trial_number)
+            $trialStmt = $pdo->prepare("SELECT COALESCE(MAX(trial_number), 0) + 1 FROM cd_records WHERE subject_id = ? AND fall_type_id = ?");
+            $trialStmt->execute([$subject_id, $fall_type_id]);
+            $next_trial_num = intval($trialStmt->fetchColumn());
+            if ($next_trial_num < 1) $next_trial_num = 1;
+
+            $trial_id = !empty($_POST['trial_id']) ? intval($_POST['trial_id']) : null;
+            // สถานะเริ่มต้น: 'pending' (รอส่งคำสั่ง) เก็บเป็น 'completed' ที่มี 0 จุดข้อมูล
+            $db_status = ($req_status === 'recording') ? 'recording' : 'completed';
 
             $pdo->beginTransaction();
-            if ($db_status === 'recording' && $device_id > 0) {
+            if ($db_status === 'recording') {
                 // เคลียร์รายการอื่นของอุปกรณ์เดียวกันที่ค้างสถานะ recording อยู่
                 $resetStmt = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE device_id = ? AND status = 'recording'");
                 $resetStmt->execute([$device_id]);
             }
-            $raw_notes = trim($_POST['notes'] ?? '');
-            $dur_mode = $_POST['duration_mode'] ?? 'auto';
-            if ($dur_mode === 'continuous') {
-                $raw_notes .= (empty($raw_notes) ? '' : ' ') . '[duration:continuous]';
-            } elseif ($dur_mode === '60') {
-                $raw_notes .= (empty($raw_notes) ? '' : ' ') . '[duration:60]';
-            }
 
             $stmt = $pdo->prepare("
                 INSERT INTO cd_records (subject_id, device_id, fall_type_id, trial_id, trial_number, notes, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, '', ?)
             ");
             $stmt->execute([
-                intval($_POST['subject_id'] ?? 0),
+                $subject_id,
                 $device_id,
-                intval($_POST['fall_type_id'] ?? 0),
+                $fall_type_id,
                 $trial_id,
-                intval($_POST['trial_number'] ?? 1),
-                $raw_notes,
+                $next_trial_num,
                 $db_status
             ]);
             $new_id = $pdo->lastInsertId();
             $pdo->commit();
-            echo json_encode(['success' => true, 'id' => $new_id, 'status' => $db_status]);
+            echo json_encode(['success' => true, 'id' => $new_id, 'trial_number' => $next_trial_num, 'status' => $db_status]);
             break;
 
         case 'delete_record':
@@ -410,51 +416,27 @@ try {
             $cmd = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($cmd) {
-                $notes = $cmd['notes'] ?? '';
-                $code = strtolower($cmd['activity_code']);
-                $duration_sec = 12; // ค่าเริ่มต้นมาตรฐาน
-                $is_continuous = false;
+                $code = strtoupper(trim($cmd['activity_code']));
+                $cat = strtolower(trim($cmd['category']));
+                $is_fall = ($cat === 'fall' || strpos($code, 'F0') === 0 || stripos($code, 'FALL') !== false);
 
-                // 1) โหมดต่อเนื่องไม่จำกัดเวลา (กดเริ่ม - กดหยุด)
-                if (stripos($notes, '[duration:continuous]') !== false ||
-                    stripos($notes, 'continuous') !== false ||
-                    $code === 'd19' ||
-                    $code === 'adl_continuous_stream') {
-                    $duration_sec = 0; // 0 = continuous stream
-                    $is_continuous = true;
-                }
-                // 2) โหมดระบุเวลาผ่านแท็ก [duration:XX]
-                elseif (preg_match('/\[duration:(\d+)\]/', $notes, $m)) {
-                    $duration_sec = min(60, max(3, intval($m[1])));
-                    $is_continuous = false;
-                }
-                // 3) โหมดยาวพิเศษ 60 วินาที (เช่น D18 เดินสะดุดต่อเนื่อง)
-                elseif (stripos($notes, '[duration:60]') !== false ||
-                        stripos($notes, '60s') !== false ||
-                        $code === 'd18' ||
-                        $code === 'adl_continuous_stumble') {
-                    $duration_sec = 60;
-                    $is_continuous = false;
-                }
-                // 4) กำหนดตามมาตรฐาน SisFall (15s, 25s, 12s)
-                elseif ($cmd['category'] === 'fall' || strpos($code, 'fall_') === 0) {
-                    $duration_sec = 15;
-                } elseif (in_array($code, ['d05', 'd06', 'd07', 'd08', 'd17', 'adl_stairs', 'adl_stairs_up', 'adl_stairs_down'])) {
-                    $duration_sec = 25;
-                } elseif (in_array($code, ['d01', 'd02', 'd03', 'd04', 'adl_walk', 'adl_jog'])) {
-                    $duration_sec = 15;
-                }
+                // ท่าล้ม: 2 วินาที (ก่อนล้ม 1 วิ + หลังล้ม 1 วิ = 100 จุด ที่ 50Hz)
+                // ท่า ADL: 10 วินาที (ยืนเตรียมตัว 1 วิ + ทำท่า 8 วิ + ยืน 1 วิ = 500 จุด ที่ 50Hz)
+                $duration_sec = $is_fall ? 2 : 10;
+                $target_samples = $is_fall ? 100 : 500;
 
                 echo json_encode([
                     'success' => true,
                     'has_command' => true,
                     'record_id' => intval($cmd['record_id']),
-                    'category' => $cmd['category'],
+                    'category' => $is_fall ? 'fall' : 'adl',
                     'activity_code' => $cmd['activity_code'],
                     'activity_name' => $cmd['activity_name'],
                     'trial_number' => intval($cmd['trial_number']),
                     'duration_sec' => $duration_sec,
-                    'is_continuous' => $is_continuous,
+                    'target_samples' => $target_samples,
+                    'is_fall' => $is_fall,
+                    'is_continuous' => false,
                     'countdown_sec' => 3
                 ]);
             } else {
@@ -462,6 +444,26 @@ try {
                     'success' => true,
                     'has_command' => false
                 ]);
+            }
+            break;
+
+        case 'delete_posture_records':
+            $subject_id = intval($_POST['subject_id'] ?? 0);
+            $fall_type_id = intval($_POST['fall_type_id'] ?? 0);
+            if ($subject_id > 0 && $fall_type_id > 0) {
+                $pdo->beginTransaction();
+                $recIdsStmt = $pdo->prepare("SELECT id FROM cd_records WHERE subject_id = ? AND fall_type_id = ?");
+                $recIdsStmt->execute([$subject_id, $fall_type_id]);
+                $recIds = $recIdsStmt->fetchAll(PDO::FETCH_COLUMN);
+                if (!empty($recIds)) {
+                    $inClause = implode(',', array_map('intval', $recIds));
+                    $pdo->query("DELETE FROM cd_sensor_data WHERE record_id IN ($inClause)");
+                    $pdo->query("DELETE FROM cd_records WHERE id IN ($inClause)");
+                }
+                $pdo->commit();
+                echo json_encode(['success' => true]);
+            } else {
+                echo json_encode(['success' => false, 'error' => 'Invalid parameters']);
             }
             break;
 
