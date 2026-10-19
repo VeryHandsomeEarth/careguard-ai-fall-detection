@@ -208,7 +208,7 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  pinMode(BUTTON_PIN, INPUT_PULLUP); // ปุ่ม D18 กดบันทึก ADL
+  pinMode(BUTTON_PIN, INPUT_PULLDOWN); // ปุ่ม D18 กดบันทึก ADL (Active HIGH)
 
   Serial.println("\n==================================================================");
   Serial.println("  CollectData_Hardware — Dual-Core FreeRTOS Sensor Logger");
@@ -279,8 +279,8 @@ void sensorCollectTask(void *pvParameters) {
   unsigned long lastHighGyroTime = 0;
   unsigned long waitFallStartTime = 0;
 
-  // สำหรับปุ่มกด D18
-  int lastButtonState = HIGH;
+  // สำหรับปุ่มกด D18 (Active HIGH: ปกติ 0V / กดแล้วเป็น 3.3V HIGH)
+  int lastButtonState = LOW;
   unsigned long lastButtonDebounce = 0;
 
   for (;;) {
@@ -299,14 +299,14 @@ void sensorCollectTask(void *pvParameters) {
         currentMode = MODE_COUNTDOWN;
       }
 
-      // ตรวจสอบการกดปุ่ม D18 บนบอร์ดเพื่อเริ่มบันทึก ADL 10 วินาที
+      // ตรวจสอบการกดปุ่ม D18 บนบอร์ดเพื่อเริ่มบันทึก ADL 10 วินาที (Active HIGH)
       int btnVal = digitalRead(BUTTON_PIN);
       if (btnVal != lastButtonState) {
         lastButtonDebounce = now;
       }
       if ((now - lastButtonDebounce) > 50) {
-        if (btnVal == LOW && lastButtonState == HIGH) {
-          Serial.println("\n[ปุ่ม D18] 🔘 ตรวจพบการกดปุ่ม D18 บนบอร์ด -> เริ่มรอบ ADL 10 วินาที!");
+        if (btnVal == HIGH && lastButtonState == LOW) {
+          Serial.println("\n[ปุ่ม D18] 🔘 ตรวจพบการกดปุ่ม D18 (Active HIGH) -> เริ่มรอบ ADL 10 วินาที!");
           memset(&currentCmd, 0, sizeof(RecordCommand));
           currentCmd.record_id = activeRecordId; // 0 หรือ ID ที่รออยู่
           strncpy(currentCmd.category, "adl", sizeof(currentCmd.category) - 1);
