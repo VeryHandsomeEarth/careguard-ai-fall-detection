@@ -127,6 +127,81 @@ try {
             echo json_encode(['success' => true]);
             break;
 
+        case 'start_next_trial':
+            $subject_id = intval($_POST['subject_id'] ?? 0);
+            $fall_type_id = intval($_POST['fall_type_id'] ?? 0);
+            $device_id = intval($_POST['device_id'] ?? 0);
+
+            if ($subject_id <= 0 || $fall_type_id <= 0) {
+                echo json_encode(['success' => false, 'error' => 'ข้อมูลไม่ครบถ้วน']);
+                break;
+            }
+
+            // ถ้าไม่มี device_id ให้ดึงจากบันทึกล่าสุด หรืออุปกรณ์ตัวแรก
+            if ($device_id <= 0) {
+                $devStmt = $pdo->prepare("SELECT device_id FROM cd_records WHERE subject_id = ? AND fall_type_id = ? ORDER BY id DESC LIMIT 1");
+                $devStmt->execute([$subject_id, $fall_type_id]);
+                $device_id = intval($devStmt->fetchColumn());
+                if ($device_id <= 0) {
+                    $firstDev = $pdo->query("SELECT id FROM cd_devices ORDER BY id ASC LIMIT 1")->fetchColumn();
+                    $device_id = intval($firstDev);
+                }
+            }
+
+            $pdo->beginTransaction();
+
+            // ตรวจสอบว่ามีรายการในท่านี้ที่ยังไม่มีข้อมูล (0 จุด) หรือไม่
+            $pendingStmt = $pdo->prepare("
+                SELECT r.id, r.trial_number 
+                FROM cd_records r
+                WHERE r.subject_id = ? AND r.fall_type_id = ?
+                  AND (SELECT COUNT(*) FROM cd_sensor_data WHERE record_id = r.id) = 0
+                ORDER BY r.id DESC LIMIT 1
+            ");
+            $pendingStmt->execute([$subject_id, $fall_type_id]);
+            $pendingRecord = $pendingStmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($pendingRecord) {
+                // หากมีรอบที่ยังว่างอยู่ ให้ใช้รอบนั้น
+                $record_id = intval($pendingRecord['id']);
+                $trial_number = intval($pendingRecord['trial_number']);
+            } else {
+                // หากทุกรอบมีข้อมูลแล้ว ให้สร้างรอบใหม่ (รอบถัดไป: MAX + 1)
+                $maxTrialStmt = $pdo->prepare("SELECT COALESCE(MAX(trial_number), 0) + 1 FROM cd_records WHERE subject_id = ? AND fall_type_id = ?");
+                $maxTrialStmt->execute([$subject_id, $fall_type_id]);
+                $trial_number = intval($maxTrialStmt->fetchColumn());
+                if ($trial_number < 1) $trial_number = 1;
+
+                $insStmt = $pdo->prepare("
+                    INSERT INTO cd_records (subject_id, device_id, fall_type_id, trial_number, notes, status)
+                    VALUES (?, ?, ?, ?, '', 'recording')
+                ");
+                $insStmt->execute([$subject_id, $device_id, $fall_type_id, $trial_number]);
+                $record_id = intval($pdo->lastInsertId());
+            }
+
+            // เคลียร์สถานะ recording อื่นของอุปกรณ์นี้ เพื่อไม่ให้คำสั่งชนกัน
+            $resetStmt = $pdo->prepare("UPDATE cd_records SET status = 'completed' WHERE device_id = ? AND status = 'recording' AND id != ?");
+            $resetStmt->execute([$device_id, $record_id]);
+
+            // ล้างข้อมูลเซ็นเซอร์เก่า (ถ้ามี)
+            $delData = $pdo->prepare("DELETE FROM cd_sensor_data WHERE record_id = ?");
+            $delData->execute([$record_id]);
+
+            // ตั้งสถานะเป็น recording ให้ ESP32 ดึงไปทำงาน
+            $updStmt = $pdo->prepare("UPDATE cd_records SET status = 'recording', device_id = ? WHERE id = ?");
+            $updStmt->execute([$device_id, $record_id]);
+
+            $pdo->commit();
+
+            echo json_encode([
+                'success' => true,
+                'record_id' => $record_id,
+                'trial_number' => $trial_number,
+                'status' => 'recording'
+            ]);
+            break;
+
         case 'send_command':
             $record_id = intval($_POST['id'] ?? ($_REQUEST['record_id'] ?? 0));
             if ($record_id <= 0) {

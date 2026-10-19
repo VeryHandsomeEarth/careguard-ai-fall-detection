@@ -53,6 +53,34 @@ try {
             $record = $stmtPending->fetch();
         }
         if (!$record) {
+            // หากยังไม่มี ให้สร้างรอบถัดไปของท่า D01 ให้ผู้ทดสอบล่าสุดของอุปกรณ์นี้โดยอัตโนมัติ (D18 Trigger)
+            $devStmt = $pdo->prepare("SELECT id FROM cd_devices WHERE mac_address = ?");
+            $devStmt->execute([$mac]);
+            $devId = intval($devStmt->fetchColumn());
+
+            if ($devId > 0) {
+                $subStmt = $pdo->prepare("SELECT subject_id FROM cd_records WHERE device_id = ? ORDER BY id DESC LIMIT 1");
+                $subStmt->execute([$devId]);
+                $subId = intval($subStmt->fetchColumn());
+                if ($subId <= 0) {
+                    $subId = intval($pdo->query("SELECT id FROM cd_subjects ORDER BY id DESC LIMIT 1")->fetchColumn());
+                }
+
+                $ftStmt = $pdo->query("SELECT id FROM cd_fall_types WHERE code IN ('D01', 'adl_walk') ORDER BY id ASC LIMIT 1");
+                $ftId = intval($ftStmt->fetchColumn());
+
+                if ($subId > 0 && $ftId > 0) {
+                    $maxTr = $pdo->prepare("SELECT COALESCE(MAX(trial_number), 0) + 1 FROM cd_records WHERE subject_id = ? AND fall_type_id = ?");
+                    $maxTr->execute([$subId, $ftId]);
+                    $nextTr = intval($maxTr->fetchColumn());
+
+                    $newIns = $pdo->prepare("INSERT INTO cd_records (subject_id, device_id, fall_type_id, trial_number, notes, status) VALUES (?, ?, ?, ?, 'Hardware D18 Trigger', 'recording')");
+                    $newIns->execute([$subId, $devId, $ftId, $nextTr]);
+                    $record = ['id' => $pdo->lastInsertId()];
+                }
+            }
+        }
+        if (!$record) {
             http_response_code(404);
             echo json_encode(['success'=>false,'error'=>'No active or pending recording for this device']);
             exit;

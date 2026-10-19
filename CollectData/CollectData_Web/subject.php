@@ -348,10 +348,10 @@ $devices = $pdo->query("SELECT * FROM cd_devices ORDER BY name")->fetchAll();
                                 <button class="btn btn-outline btn-sm" onclick="cancelCommand(<?= $activeRecId ?>)" title="ยกเลิกการรอรับข้อมูล">✘ ยกเลิก</button>
                             <?php elseif ($hasCompleted): ?>
                                 <span class="badge badge-adl">✔ เสร็จสิ้น</span>
-                                <button class="btn btn-primary btn-sm" onclick="sendCommand(<?= $targetSendRecId ?>, true)" title="ส่งคำสั่งเริ่มบันทึกใหม่ไปที่ ESP32">📡 ส่งคำสั่ง</button>
+                                <button class="btn btn-primary btn-sm" onclick="startNextTrial(<?= (int)$group['fall_type_id'] ?>, <?= (int)$latestRec['device_id'] ?>)" title="สร้างรอบถัดไปและส่งคำสั่งเริ่มบันทึก">📡 ส่งคำสั่ง (รอบถัดไป)</button>
                             <?php else: ?>
                                 <span class="badge badge-other">⚪ รอส่งคำสั่ง</span>
-                                <button class="btn btn-primary btn-sm" onclick="sendCommand(<?= $targetSendRecId ?>, false)" title="ส่งคำสั่งเริ่มบันทึกไปที่ ESP32">📡 ส่งคำสั่ง</button>
+                                <button class="btn btn-primary btn-sm" onclick="startNextTrial(<?= (int)$group['fall_type_id'] ?>, <?= (int)$latestRec['device_id'] ?>)" title="ส่งคำสั่งเริ่มบันทึกไปที่ ESP32">📡 ส่งคำสั่ง</button>
                             <?php endif; ?>
 
                             <button class="btn btn-outline btn-sm btn-icon" id="btn_acc_<?= $groupKey ?>" onclick="togglePostureAccordion('<?= $groupKey ?>')" title="เปิด/ปิดดูรายการและกราฟ">
@@ -409,13 +409,13 @@ $devices = $pdo->query("SELECT * FROM cd_devices ORDER BY name")->fetchAll();
                                                     <button class="btn btn-outline btn-sm" id="btn_chart_<?= $rid ?>" onclick="toggleTrialChart(<?= $rid ?>, <?= $r['trial_number'] ?>, '<?= htmlspecialchars($group['name']) ?>')">
                                                         📈 ดูกราฟ
                                                     </button>
-                                                    <button class="btn btn-outline btn-sm" onclick="sendCommand(<?= $rid ?>, true)" title="ส่งคำสั่งซ้ำเพื่อบันทึกทับรอบนี้">📡 ส่งคำสั่งซ้ำ</button>
+                                                    <button class="btn btn-outline btn-sm" onclick="reRecordTrial(<?= $rid ?>, <?= $r['trial_number'] ?>)" title="ส่งคำสั่งซ้ำเพื่อบันทึกใหม่ของรอบนี้">📡 ส่งคำสั่งซ้ำ</button>
                                                     <a href="api/actions.php?action=export_sensor_data&record_id=<?= $rid ?>" class="btn btn-outline btn-sm" title="ส่งออก CSV">📥 CSV</a>
                                                 <?php elseif ($isRec): ?>
                                                     <button class="btn btn-danger btn-sm" onclick="stopCommand(<?= $rid ?>)">⏹️ หยุด</button>
                                                     <button class="btn btn-outline btn-sm" onclick="cancelCommand(<?= $rid ?>)">✘ ยกเลิก</button>
                                                 <?php else: ?>
-                                                    <button class="btn btn-primary btn-sm" onclick="sendCommand(<?= $rid ?>, false)">📡 ส่งคำสั่ง</button>
+                                                    <button class="btn btn-primary btn-sm" onclick="reRecordTrial(<?= $rid ?>, <?= $r['trial_number'] ?>)">📡 ส่งคำสั่ง</button>
                                                 <?php endif; ?>
                                                 <button class="btn btn-danger btn-sm" onclick="confirmDeleteRecord(<?= $rid ?>)" title="ลบรอบนี้">🗑️</button>
                                             </td>
@@ -657,6 +657,42 @@ $devices = $pdo->query("SELECT * FROM cd_devices ORDER BY name")->fetchAll();
                 showError('ข้อผิดพลาด: ' + (data.error || 'ไม่สามารถสร้างรายการได้'));
             }
         });
+
+        // ส่งคำสั่งในแถวหลัก -> สร้างไฟล์ของรอบถัดไป (เช่น รอบ 2, รอบ 3...)
+        async function startNextTrial(fallTypeId, deviceId) {
+            const form = new FormData();
+            form.append('subject_id', <?= $id ?>);
+            form.append('fall_type_id', fallTypeId);
+            form.append('device_id', deviceId);
+
+            const res = await fetch('api/actions.php?action=start_next_trial', { method: 'POST', body: form });
+            const data = await res.json();
+            if (data.success) {
+                location.reload();
+            } else {
+                showError('ข้อผิดพลาด: ' + (data.error || 'ไม่สามารถส่งคำสั่งรอบถัดไปได้'));
+            }
+        }
+
+        // ส่งคำสั่งซ้ำในแถวย่อย -> บันทึกใหม่เฉพาะรอบเดิมของตัวเอง (ล้างข้อมูลเก่าของรอบนั้นแล้วบันทึกทับ)
+        async function reRecordTrial(recordId, trialNumber) {
+            const confirmed = await confirmAction({
+                title: `ส่งคำสั่งบันทึกซ้ำรอบที่ #${trialNumber}?`,
+                text: `ข้อมูลเดิมของรอบที่ #${trialNumber} จะถูกล้างเพื่อบันทึกใหม่ โดยคงเป็นรอบเดิม`,
+                confirmButtonText: '📡 ส่งคำสั่งซ้ำ'
+            });
+            if (!confirmed) return;
+
+            const form = new FormData();
+            form.append('id', recordId);
+            const res = await fetch('api/actions.php?action=send_command', { method: 'POST', body: form });
+            const data = await res.json();
+            if (data.success) {
+                location.reload();
+            } else {
+                showError('ข้อผิดพลาด: ' + (data.error || 'ไม่สามารถส่งคำสั่งซ้ำได้'));
+            }
+        }
 
         // ส่งคำสั่งเริ่มบันทึกไปยัง ESP32
         async function sendCommand(id, hasExistingData = false) {
