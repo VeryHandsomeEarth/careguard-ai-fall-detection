@@ -385,16 +385,27 @@ function showToast(msg, type = 'success') {
 }
 
 // ==================== Theme & Display Settings ====================
+const FONT_MAP = {
+  'sarabun': "'TH SarabunPSK', 'TH Sarabun New', 'Sarabun', 'Prompt', 'Segoe UI', -apple-system, sans-serif",
+  'thsarabunpsk': "'TH SarabunPSK', 'TH Sarabun New', 'Sarabun', 'Prompt', 'Segoe UI', -apple-system, sans-serif",
+  'default': "'TH SarabunPSK', 'TH Sarabun New', 'Sarabun', 'Prompt', 'Segoe UI', -apple-system, sans-serif",
+  'prompt': "'Prompt', 'Segoe UI', 'Noto Sans Thai', -apple-system, sans-serif",
+  'kanit': "'Kanit', 'Prompt', sans-serif",
+  'inter': "'Inter', 'Prompt', sans-serif"
+};
+
 function initThemeSettings() {
   const savedTheme = localStorage.getItem('careguard_theme') || 'dark';
-  const savedFont = localStorage.getItem('careguard_font') || 'prompt';
-  const savedFontSize = localStorage.getItem('careguard_font_size') || 'medium';
+  const savedFont = localStorage.getItem('careguard_font') || 'sarabun'; // TH SarabunPSK default!
+  let savedFontSize = localStorage.getItem('careguard_font_size') || '16'; // 16px default!
 
-  document.documentElement.setAttribute('data-theme', savedTheme);
-  if (savedFont && savedFont !== 'default') {
-    document.documentElement.setAttribute('data-font', savedFont);
-  }
-  document.documentElement.setAttribute('data-font-size', savedFontSize);
+  if (savedFontSize === 'small') savedFontSize = '14';
+  else if (savedFontSize === 'medium') savedFontSize = '16';
+  else if (savedFontSize === 'large') savedFontSize = '18';
+
+  setTheme(savedTheme);
+  setFont(savedFont, false);
+  setFontSize(savedFontSize, false);
 }
 
 function setTheme(theme) {
@@ -402,15 +413,106 @@ function setTheme(theme) {
   localStorage.setItem('careguard_theme', theme);
 }
 
-function setFont(font) {
-  if (font === 'default') document.documentElement.removeAttribute('data-font');
-  else document.documentElement.setAttribute('data-font', font);
-  localStorage.setItem('careguard_font', font);
+function setFont(font, save = true) {
+  const fontKey = font || 'sarabun';
+  const fontStack = FONT_MAP[fontKey] || FONT_MAP['sarabun'];
+
+  document.documentElement.setAttribute('data-font', fontKey);
+  document.documentElement.style.setProperty('--font-main', fontStack);
+  if (document.body) {
+    document.body.style.fontFamily = fontStack;
+  }
+
+  let fontStyleTag = document.getElementById('careguard-font-family-style');
+  if (!fontStyleTag) {
+    fontStyleTag = document.createElement('style');
+    fontStyleTag.id = 'careguard-font-family-style';
+    document.head.appendChild(fontStyleTag);
+  }
+  fontStyleTag.textContent = `
+    html, body, button, input, select, textarea, h1, h2, h3, h4, h5, h6, p, span, a, label, div, table, tr, td, th {
+      font-family: ${fontStack} !important;
+    }
+    code, pre, .font-mono {
+      font-family: var(--font-mono) !important;
+    }
+  `;
+
+  if (save) {
+    localStorage.setItem('careguard_font', fontKey);
+  }
 }
 
-function setFontSize(size) {
-  document.documentElement.setAttribute('data-font-size', size);
-  localStorage.setItem('careguard_font_size', size);
+function setFontSize(size, save = true) {
+  let sizePx = parseInt(size);
+  if (isNaN(sizePx)) {
+    if (size === 'small') sizePx = 14;
+    else if (size === 'medium') sizePx = 16;
+    else if (size === 'large') sizePx = 18;
+    else sizePx = 16;
+  }
+  if (sizePx < 12) sizePx = 12;
+  if (sizePx > 28) sizePx = 28;
+
+  if (save) {
+    localStorage.setItem('careguard_font_size', String(sizePx));
+  }
+  applyGlobalFontSize(sizePx);
+}
+
+function applyGlobalFontSize(sizePx) {
+  const base = 16;
+  const ratio = sizePx / base;
+
+  document.documentElement.setAttribute('data-font-size-px', sizePx);
+  document.documentElement.style.setProperty('--font-base-size', sizePx + 'px');
+  document.documentElement.style.setProperty('--font-scale', ratio);
+
+  let styleTag = document.getElementById('careguard-dynamic-font-size');
+  if (!styleTag) {
+    styleTag = document.createElement('style');
+    styleTag.id = 'careguard-dynamic-font-size';
+    document.head.appendChild(styleTag);
+  }
+
+  styleTag.textContent = `
+    html, body {
+      font-size: ${sizePx}px !important;
+    }
+    body, p, label, input, select, textarea, button, a, td, th, li {
+      font-size: ${sizePx}px;
+    }
+    span:not(.status-dot):not(.emergency-fall-icon) {
+      font-size: inherit;
+    }
+    .nav-brand { font-size: max(16px, calc(19px * ${ratio})) !important; }
+    .nav-link { font-size: max(12px, calc(14px * ${ratio})) !important; }
+    .page-header h1 { font-size: max(18px, calc(24px * ${ratio})) !important; }
+    .card-title { font-size: max(15px, calc(16.5px * ${ratio})) !important; }
+    .stat-label { font-size: max(12px, calc(13px * ${ratio})) !important; }
+    .stat-value { font-size: max(22px, calc(30px * ${ratio})) !important; }
+    .stat-value span { font-size: max(12px, calc(14px * ${ratio})) !important; }
+    .stat-desc { font-size: max(11px, calc(12px * ${ratio})) !important; }
+    .btn { font-size: max(12px, calc(13.5px * ${ratio})) !important; }
+    .pill { font-size: max(11px, calc(12px * ${ratio})) !important; }
+    .fall-alert-content { font-size: max(14px, calc(15.5px * ${ratio})) !important; }
+    .emergency-modal-title { font-size: max(18px, calc(22px * ${ratio})) !important; }
+    .emergency-fall-dir { font-size: max(15px, calc(17px * ${ratio})) !important; }
+    .emergency-fall-g { font-size: max(13px, calc(14px * ${ratio})) !important; }
+    .detail-label { font-size: max(12px, calc(13px * ${ratio})) !important; }
+    .detail-val { font-size: max(13px, calc(14.5px * ${ratio})) !important; }
+    .table th, .table td { font-size: max(12px, calc(13.5px * ${ratio})) !important; }
+    .dropdown-item { font-size: max(13px, calc(14px * ${ratio})) !important; }
+    .dropdown-header { font-size: max(13px, calc(14px * ${ratio})) !important; }
+    .modal-title { font-size: max(16px, calc(18px * ${ratio})) !important; }
+    .form-label { font-size: max(12.5px, calc(13.5px * ${ratio})) !important; }
+    .form-control, .form-select { font-size: max(13px, calc(14px * ${ratio})) !important; }
+    .chat-bubble { font-size: max(13px, calc(14px * ${ratio})) !important; }
+    .chat-time { font-size: max(10px, calc(11px * ${ratio})) !important; }
+    .status-badge { font-size: max(11px, calc(12.5px * ${ratio})) !important; }
+    .last-update { font-size: max(11px, calc(13px * ${ratio})) !important; }
+    .map-info { font-size: max(11px, calc(13px * ${ratio})) !important; }
+  `;
 }
 
 // ==================== User Profile & Navbar Dropdown ====================
@@ -828,8 +930,14 @@ async function deleteDevice(id) {
 // 3. Theme Modal
 function openThemeModal() {
   const currentTheme = localStorage.getItem('careguard_theme') || 'dark';
-  const currentFont = localStorage.getItem('careguard_font') || 'default';
-  const currentSize = localStorage.getItem('careguard_font_size') || 'medium';
+  const currentFont = localStorage.getItem('careguard_font') || 'sarabun';
+  let currentSize = localStorage.getItem('careguard_font_size') || '16';
+
+  if (currentSize === 'small') currentSize = '14';
+  else if (currentSize === 'medium') currentSize = '16';
+  else if (currentSize === 'large') currentSize = '18';
+  
+  const sizeNum = parseInt(currentSize) || 16;
 
   const themeRadio = document.querySelector(`input[name="themeChoice"][value="${currentTheme}"]`);
   if (themeRadio) themeRadio.checked = true;
@@ -837,22 +945,55 @@ function openThemeModal() {
   const fontSelect = document.getElementById('fontChoice');
   if (fontSelect) fontSelect.value = currentFont;
 
-  const sizeSelect = document.getElementById('fontSizeChoice');
-  if (sizeSelect) sizeSelect.value = currentSize;
+  const slider = document.getElementById('fontSizeSlider');
+  if (slider) slider.value = sizeNum;
+
+  const input = document.getElementById('fontSizeInput');
+  if (input) input.value = sizeNum;
 
   openModal('themeModal');
 }
 
+function syncFontSizeFromSlider(val) {
+  const num = parseInt(val) || 16;
+  const input = document.getElementById('fontSizeInput');
+  if (input) input.value = num;
+  applyGlobalFontSize(num);
+}
+
+function syncFontSizeFromInput(val) {
+  let num = parseInt(val);
+  if (isNaN(num)) num = 16;
+  if (num < 12) num = 12;
+  if (num > 28) num = 28;
+  const slider = document.getElementById('fontSizeSlider');
+  if (slider) slider.value = num;
+  applyGlobalFontSize(num);
+}
+
+function resetFontSizeDefault() {
+  const defaultSize = 16;
+  const slider = document.getElementById('fontSizeSlider');
+  const input = document.getElementById('fontSizeInput');
+  if (slider) slider.value = defaultSize;
+  if (input) input.value = defaultSize;
+  applyGlobalFontSize(defaultSize);
+}
+
+function previewFontChange(font) {
+  setFont(font, false);
+}
+
 function applyThemeModal() {
   const selTheme = document.querySelector('input[name="themeChoice"]:checked')?.value || 'dark';
-  const selFont = document.getElementById('fontChoice')?.value || 'default';
-  const selSize = document.getElementById('fontSizeChoice')?.value || 'medium';
+  const selFont = document.getElementById('fontChoice')?.value || 'sarabun';
+  const selSize = parseInt(document.getElementById('fontSizeInput')?.value || document.getElementById('fontSizeSlider')?.value) || 16;
 
   setTheme(selTheme);
-  setFont(selFont);
-  setFontSize(selSize);
+  setFont(selFont, true);
+  setFontSize(selSize, true);
 
-  showToast('บันทึกการตั้งค่าการแสดงผลแล้ว');
+  showToast(`บันทึกการตั้งค่าแล้ว (ฟอนต์: ${selFont === 'sarabun' ? 'TH SarabunPSK' : selFont}, ขนาด: ${selSize}px)`);
   closeModal('themeModal');
 }
 
@@ -1367,24 +1508,37 @@ function injectSharedComponents() {
               </div>
             </div>
 
-            <div class="form-group">
-              <label class="form-label">🔤 เลือกฟอนต์ตัวอักษร</label>
-              <select id="fontChoice" class="form-select">
-                <option value="default">ค่าเริ่มต้น (Segoe UI / Noto Sans Thai)</option>
-                <option value="sarabun">Sarabun (ทางการ อ่านง่าย)</option>
-                <option value="kanit">Kanit (ทันสมัย หรูหรา)</option>
+            <div class="form-group" style="margin-top:14px;">
+              <label class="form-label" style="font-weight:600;margin-bottom:6px;">🔤 เลือกฟอนต์ตัวอักษร</label>
+              <select id="fontChoice" class="form-select" onchange="previewFontChange(this.value)">
+                <option value="sarabun">TH SarabunPSK / Sarabun (ค่าเริ่มต้น - ทางการ สบายตา)</option>
                 <option value="prompt">Prompt (เรียบโมเดิร์น)</option>
-                <option value="inter">Inter (สากล)</option>
+                <option value="kanit">Kanit (ทันสมัย หรูหรา)</option>
+                <option value="inter">Inter (สากล ทันสมัย)</option>
               </select>
             </div>
 
-            <div class="form-group">
-              <label class="form-label">🔍 ขนาดตัวอักษร</label>
-              <select id="fontSizeChoice" class="form-select">
-                <option value="small">เล็ก (13.5px)</option>
-                <option value="medium" selected>ปานกลาง (15px - แนะนำ)</option>
-                <option value="large">ใหญ่พิเศษ (16.5px - เหมาะกับผู้สูงอายุ)</option>
-              </select>
+            <div class="form-group" style="margin-top:16px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <label class="form-label" style="font-weight:600;margin:0;">🔍 ขนาดตัวอักษรหน้าเว็บ</label>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" id="fontSizeInput" min="12" max="28" step="1" value="16" 
+                         style="width:65px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);text-align:center;font-weight:700;font-size:14px;"
+                         oninput="syncFontSizeFromInput(this.value)">
+                  <span style="font-size:13px;color:var(--text-secondary);font-weight:600;">px</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+                <span style="font-size:12px;color:var(--text-muted);font-weight:600;">12px</span>
+                <input type="range" id="fontSizeSlider" min="12" max="28" step="1" value="16" 
+                       style="flex:1;cursor:pointer;accent-color:var(--accent);"
+                       oninput="syncFontSizeFromSlider(this.value)">
+                <span style="font-size:12px;color:var(--text-muted);font-weight:600;">28px</span>
+              </div>
+              <div style="margin-top:6px;font-size:12px;color:var(--text-secondary);display:flex;justify-content:space-between;align-items:center;">
+                <span>ค่าเริ่มต้น: 16px (TH SarabunPSK)</span>
+                <button type="button" class="btn btn-sm btn-outline" style="padding:2px 10px;font-size:11px;" onclick="resetFontSizeDefault()">รีเซ็ต 16px</button>
+              </div>
             </div>
           </div>
           <div class="modal-footer">

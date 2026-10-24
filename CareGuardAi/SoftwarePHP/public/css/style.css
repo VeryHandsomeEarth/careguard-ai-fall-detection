@@ -34,7 +34,8 @@
   --shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
   --shadow-glow: 0 0 20px rgba(0, 210, 255, 0.2);
   
-  --font-main: 'Prompt', 'Segoe UI', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  --font-main: 'TH SarabunPSK', 'TH Sarabun New', 'Sarabun', 'Prompt', 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  --font-base-size: 16px;
   --font-mono: 'Consolas', 'Courier New', monospace;
 }
 
@@ -42,6 +43,11 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* Global Typography Inheritance */
+html, body, button, input, select, textarea, h1, h2, h3, h4, h5, h6, p, span, a, label, div, table, tr, td, th {
+  font-family: var(--font-main);
 }
 
 body {
@@ -792,14 +798,24 @@ tr:hover td {
   --shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
 }
 
-[data-font="kanit"] { font-family: 'Kanit', sans-serif !important; }
-[data-font="prompt"] { font-family: 'Prompt', sans-serif !important; }
-[data-font="sarabun"] { font-family: 'Sarabun', sans-serif !important; }
-[data-font="inter"] { font-family: 'Inter', sans-serif !important; }
+[data-font="sarabun"],
+[data-font="thsarabunpsk"],
+[data-font="default"] {
+  --font-main: 'TH SarabunPSK', 'TH Sarabun New', 'Sarabun', 'Prompt', 'Segoe UI', sans-serif !important;
+}
+[data-font="prompt"] {
+  --font-main: 'Prompt', 'Segoe UI', 'Noto Sans Thai', sans-serif !important;
+}
+[data-font="kanit"] {
+  --font-main: 'Kanit', 'Prompt', sans-serif !important;
+}
+[data-font="inter"] {
+  --font-main: 'Inter', 'Prompt', sans-serif !important;
+}
 
-[data-font-size="small"] { font-size: 13.5px; }
-[data-font-size="medium"] { font-size: 15px; }
-[data-font-size="large"] { font-size: 16.5px; }
+[data-font-size="small"] { font-size: 14px; }
+[data-font-size="medium"] { font-size: 16px; }
+[data-font-size="large"] { font-size: 18px; }
 
 code {
   font-family: var(--font-mono);
