@@ -35,7 +35,7 @@
   --shadow-glow: 0 0 20px rgba(0, 210, 255, 0.2);
   
   --font-main: 'TH SarabunPSK', 'TH Sarabun New', 'Sarabun', 'Prompt', 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-  --font-base-size: 16px;
+  --font-base-size: 19px;
   --font-mono: 'Consolas', 'Courier New', monospace;
 }
 
@@ -1649,3 +1649,10 @@ code {
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
 }
+
+/* Event and Map Typography Helper Classes */
+.event-dir-title { font-size: 19px; font-weight: 700; }
+.event-sev-badge { font-size: 13.5px; font-weight: 700; }
+.event-impact-row { font-size: 15.5px; font-weight: 600; }
+.event-meta-row { font-size: 14px; }
+.map-coord-bar { font-size: 14px; }

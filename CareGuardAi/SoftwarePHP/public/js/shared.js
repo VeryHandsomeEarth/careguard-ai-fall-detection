@@ -312,7 +312,7 @@ function getAssistedBadge(assisted, assistedAt, fallId) {
     return `<span class="pill badge-assisted">✅ ช่วยเหลือแล้ว${timeStr}</span>`;
   } else {
     const idVal = fallId || 0;
-    return `<button class="btn btn-success btn-sm" onclick="markAssisted(${idVal}, event)" style="padding:3px 10px;font-size:11.5px;">🚨 กดช่วยเหลือ</button>`;
+    return `<button class="btn btn-success btn-sm" onclick="markAssisted(${idVal}, event)" style="padding:4px 12px;">🚨 กดช่วยเหลือ</button>`;
   }
 }
 
@@ -441,6 +441,10 @@ function setFont(font, save = true) {
   if (save) {
     localStorage.setItem('careguard_font', fontKey);
   }
+
+  // ซิงค์สเกลขนาดตัวอักษรใหม่ทันทีตามลักษณะทางสายตา (Optical Size) ของฟอนต์ที่เลือก
+  const curSize = parseInt(localStorage.getItem('careguard_font_size')) || 16;
+  applyGlobalFontSize(curSize);
 }
 
 function setFontSize(size, save = true) {
@@ -461,11 +465,20 @@ function setFontSize(size, save = true) {
 }
 
 function applyGlobalFontSize(sizePx) {
-  const base = 16;
-  const ratio = sizePx / base;
+  const curFont = document.documentElement.getAttribute('data-font') 
+    || localStorage.getItem('careguard_font') 
+    || 'sarabun';
+  const isSarabun = curFont === 'sarabun' || curFont === 'thsarabunpsk' || curFont === 'default';
+
+  // ค่าชดเชยขนาดแสงและสัดส่วน (Optical Sizing Compensation)
+  // เนื่องจาก TH SarabunPSK มี x-height และอัตราส่วนเส้นอักษรเล็กกว่า Prompt/Kanit ประมาณ 25%
+  // การคูณ 1.25x จะทำให้ TH SarabunPSK มีความเด่นชัดและสมดุลกับองค์ประกอบ UI
+  const opticalFactor = isSarabun ? 1.25 : 1.0;
+  const effectiveBase = Math.round(sizePx * opticalFactor);
+  const ratio = effectiveBase / 16;
 
   document.documentElement.setAttribute('data-font-size-px', sizePx);
-  document.documentElement.style.setProperty('--font-base-size', sizePx + 'px');
+  document.documentElement.style.setProperty('--font-base-size', effectiveBase + 'px');
   document.documentElement.style.setProperty('--font-scale', ratio);
 
   let styleTag = document.getElementById('careguard-dynamic-font-size');
@@ -477,41 +490,79 @@ function applyGlobalFontSize(sizePx) {
 
   styleTag.textContent = `
     html, body {
-      font-size: ${sizePx}px !important;
+      font-size: ${effectiveBase}px !important;
+      line-height: ${isSarabun ? 1.55 : 1.48} !important;
     }
     body, p, label, input, select, textarea, button, a, td, th, li {
-      font-size: ${sizePx}px;
+      font-size: ${effectiveBase}px;
+      ${isSarabun ? 'font-weight: 500;' : ''}
     }
     span:not(.status-dot):not(.emergency-fall-icon) {
       font-size: inherit;
     }
-    .nav-brand { font-size: max(16px, calc(19px * ${ratio})) !important; }
-    .nav-link { font-size: max(12px, calc(14px * ${ratio})) !important; }
-    .page-header h1 { font-size: max(18px, calc(24px * ${ratio})) !important; }
-    .card-title { font-size: max(15px, calc(16.5px * ${ratio})) !important; }
-    .stat-label { font-size: max(12px, calc(13px * ${ratio})) !important; }
-    .stat-value { font-size: max(22px, calc(30px * ${ratio})) !important; }
-    .stat-value span { font-size: max(12px, calc(14px * ${ratio})) !important; }
-    .stat-desc { font-size: max(11px, calc(12px * ${ratio})) !important; }
-    .btn { font-size: max(12px, calc(13.5px * ${ratio})) !important; }
-    .pill { font-size: max(11px, calc(12px * ${ratio})) !important; }
-    .fall-alert-content { font-size: max(14px, calc(15.5px * ${ratio})) !important; }
-    .emergency-modal-title { font-size: max(18px, calc(22px * ${ratio})) !important; }
-    .emergency-fall-dir { font-size: max(15px, calc(17px * ${ratio})) !important; }
-    .emergency-fall-g { font-size: max(13px, calc(14px * ${ratio})) !important; }
-    .detail-label { font-size: max(12px, calc(13px * ${ratio})) !important; }
-    .detail-val { font-size: max(13px, calc(14.5px * ${ratio})) !important; }
-    .table th, .table td { font-size: max(12px, calc(13.5px * ${ratio})) !important; }
-    .dropdown-item { font-size: max(13px, calc(14px * ${ratio})) !important; }
-    .dropdown-header { font-size: max(13px, calc(14px * ${ratio})) !important; }
-    .modal-title { font-size: max(16px, calc(18px * ${ratio})) !important; }
-    .form-label { font-size: max(12.5px, calc(13.5px * ${ratio})) !important; }
-    .form-control, .form-select { font-size: max(13px, calc(14px * ${ratio})) !important; }
-    .chat-bubble { font-size: max(13px, calc(14px * ${ratio})) !important; }
-    .chat-time { font-size: max(10px, calc(11px * ${ratio})) !important; }
-    .status-badge { font-size: max(11px, calc(12.5px * ${ratio})) !important; }
-    .last-update { font-size: max(11px, calc(13px * ${ratio})) !important; }
-    .map-info { font-size: max(11px, calc(13px * ${ratio})) !important; }
+
+    /* Navigation Bar */
+    .nav-brand { font-size: max(18px, calc(20px * ${ratio})) !important; font-weight: 800 !important; }
+    .nav-brand span { font-size: inherit !important; font-weight: 600 !important; }
+    .nav-link { font-size: max(15px, calc(16.5px * ${ratio})) !important; font-weight: 600 !important; }
+    .nav-username { font-size: max(14.5px, calc(16px * ${ratio})) !important; font-weight: 600 !important; }
+    .nav-dropdown-caret { font-size: max(11px, calc(12px * ${ratio})) !important; }
+    .status-badge { font-size: max(13.5px, calc(15px * ${ratio})) !important; font-weight: 600 !important; }
+    .status-badge span { font-size: inherit !important; }
+    .status-dot { width: 9px !important; height: 9px !important; }
+
+    /* Page Headers & Titles */
+    .page-header h1 { font-size: max(22px, calc(26px * ${ratio})) !important; font-weight: 800 !important; }
+    .last-update { font-size: max(13.5px, calc(15px * ${ratio})) !important; }
+    .card-title { font-size: max(17px, calc(19.5px * ${ratio})) !important; font-weight: 700 !important; }
+    .card-action { font-size: max(13.5px, calc(15px * ${ratio})) !important; font-weight: 600 !important; }
+
+    /* Stats Dashboard Cards */
+    .stat-label { font-size: max(14.5px, calc(16px * ${ratio})) !important; font-weight: 600 !important; }
+    .stat-value { font-size: max(28px, calc(34px * ${ratio})) !important; font-weight: 800 !important; }
+    .stat-value span { font-size: max(16px, calc(18px * ${ratio})) !important; font-weight: 600 !important; margin-left: 6px; }
+    .stat-desc { font-size: max(13.5px, calc(15px * ${ratio})) !important; }
+    .pill, .badge-assisted, .badge-pending, .badge-offline-sync {
+      font-size: max(13px, calc(14.5px * ${ratio})) !important;
+      font-weight: 600 !important;
+      padding: 4px 11px !important;
+    }
+
+    /* Fall Event Items (ปรับสมดุลรายการแจ้งเตือนการล้ม) */
+    .event-item { font-size: max(14px, calc(15.5px * ${ratio})) !important; }
+    .event-dir-title { font-size: max(18px, calc(20px * ${ratio})) !important; font-weight: 700 !important; }
+    .event-sev-badge { font-size: max(13px, calc(14.5px * ${ratio})) !important; font-weight: 700 !important; }
+    .event-impact-row { font-size: max(15px, calc(16.5px * ${ratio})) !important; font-weight: 600 !important; }
+    .event-meta-row { font-size: max(13.5px, calc(15px * ${ratio})) !important; }
+    .event-meta-row span, .event-meta-row a { font-size: inherit !important; }
+
+    /* Buttons */
+    .btn { font-size: max(14px, calc(15.5px * ${ratio})) !important; font-weight: 600 !important; }
+    .btn-sm { font-size: max(13px, calc(14.5px * ${ratio})) !important; font-weight: 600 !important; }
+
+    /* Map Toolbar & Details */
+    .map-coord-bar { font-size: max(14px, calc(15px * ${ratio})) !important; }
+    .map-coord-bar span, .map-coord-bar strong { font-size: inherit !important; }
+    .detail-label { font-size: max(13.5px, calc(15px * ${ratio})) !important; }
+    .detail-val { font-size: max(14.5px, calc(16px * ${ratio})) !important; font-weight: 600 !important; }
+    .table th, .table td { font-size: max(14px, calc(15.5px * ${ratio})) !important; }
+
+    /* Modals & Forms */
+    .modal-title { font-size: max(18px, calc(21px * ${ratio})) !important; font-weight: 700 !important; }
+    .form-label { font-size: max(14px, calc(15.5px * ${ratio})) !important; font-weight: 600 !important; }
+    .form-control, .form-select { font-size: max(14.5px, calc(16px * ${ratio})) !important; }
+    .dropdown-item { font-size: max(14px, calc(15.5px * ${ratio})) !important; }
+    .dropdown-header { font-size: max(14px, calc(15.5px * ${ratio})) !important; }
+
+    /* Emergency Modal Window */
+    .emergency-modal-title { font-size: max(20px, calc(24px * ${ratio})) !important; font-weight: 800 !important; }
+    .emergency-fall-dir { font-size: max(17px, calc(19.5px * ${ratio})) !important; font-weight: 700 !important; }
+    .emergency-fall-g { font-size: max(14.5px, calc(16px * ${ratio})) !important; font-weight: 600 !important; }
+    .fall-alert-content { font-size: max(15px, calc(17px * ${ratio})) !important; }
+
+    /* Floating AI Chat */
+    .chat-bubble { font-size: max(14px, calc(15.5px * ${ratio})) !important; }
+    .chat-time { font-size: max(11.5px, calc(12.5px * ${ratio})) !important; }
   `;
 }
 
