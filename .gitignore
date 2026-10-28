@@ -37,6 +37,8 @@ desktop.ini
 *.swo
 *~
 ~$*
+**/~$*
+**/*.tmp
 
 # Temporary & Local Backup Directories
 _remote_backup/
@@ -58,6 +60,10 @@ DB-FZ.txt
 /generate_presentation.py
 /Slide_Presentation_Script_and_Prompt.md
 !Document/**
+Document/**/~$*
+Document/**/~*
+Document/**/*.tmp
+Document/**/New folder/
 diagrams/
 
 generate_tinyml_diagram.py

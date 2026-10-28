@@ -14,6 +14,7 @@
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
+header('Connection: close');
 
 require_once '../config.php';
 
@@ -252,12 +253,14 @@ try {
                     $finStmt->execute([$finalize_id]);
                 }
             }
+            // ดึงเฉพาะรายการบันทึกของ subject นี้ โดยจำกัดเพื่อความเร็วสูงสุดและไม่เกิด lock contention
             $stmt = $pdo->prepare("
                 SELECT r.id, r.status, r.device_id, r.trial_number,
-                       (SELECT COUNT(*) FROM cd_sensor_data WHERE record_id = r.id) as data_points
+                       COALESCE((SELECT COUNT(*) FROM cd_sensor_data WHERE record_id = r.id), 0) as data_points
                 FROM cd_records r
                 WHERE r.subject_id = ?
                 ORDER BY r.id DESC
+                LIMIT 20
             ");
             $stmt->execute([$subject_id]);
             echo json_encode(['success' => true, 'records' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
@@ -473,10 +476,15 @@ try {
         // ==================== ตรวจสอบคำสั่งเริ่มบันทึกสำหรับ ESP32 (Polling) ====================
         case 'check_command':
             $mac = $_GET['mac'] ?? ($_GET['mac_address'] ?? '');
+            if (!empty($mac)) {
+                @file_put_contents(__DIR__ . '/poll_log.txt', date('Y-m-d H:i:s') . ' MAC: ' . $mac . "\n", FILE_APPEND);
+            }
             if (empty($mac)) {
                 echo json_encode(['success' => false, 'has_command' => false, 'error' => 'Missing MAC address']);
                 break;
             }
+
+            // 1. ค้นหาคำสั่งที่ผูกตรงกับ MAC Address นี้โดยเฉพาะ
             $stmt = $pdo->prepare("
                 SELECT r.id as record_id, r.trial_number, r.notes,
                        ft.code as activity_code, ft.name_th as activity_name, ft.category
@@ -489,6 +497,43 @@ try {
             ");
             $stmt->execute([$mac]);
             $cmd = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // 2. หากไม่พบคำสั่งที่ผูกตรงกับ MAC นี้ ให้ค้นหาคำสั่ง recording ใดๆ ที่รออยู่ แล้วผูกเข้ากับบอร์ดนี้โดยอัตโนมัติ
+            if (!$cmd) {
+                // ค้นหาหรือสร้าง device_id สำหรับ MAC ที่กำลังเชื่อมต่ออยู่
+                $devStmt = $pdo->prepare("SELECT id FROM cd_devices WHERE mac_address = ? LIMIT 1");
+                $devStmt->execute([$mac]);
+                $devRow = $devStmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$devRow) {
+                    $devName = 'ESP32_' . substr(str_replace(':', '', $mac), -4);
+                    $insDev = $pdo->prepare("INSERT INTO cd_devices (name, mac_address, description) VALUES (?, ?, 'Auto-registered')");
+                    $insDev->execute([$devName, $mac]);
+                    $devId = intval($pdo->lastInsertId());
+                } else {
+                    $devId = intval($devRow['id']);
+                }
+
+                // ดึงคำสั่งสถานะ recording ล่าสุดที่รออยู่
+                $pendingStmt = $pdo->prepare("
+                    SELECT r.id as record_id, r.trial_number, r.notes,
+                           ft.code as activity_code, ft.name_th as activity_name, ft.category
+                    FROM cd_records r
+                    JOIN cd_fall_types ft ON r.fall_type_id = ft.id
+                    WHERE r.status = 'recording'
+                    ORDER BY r.id DESC
+                    LIMIT 1
+                ");
+                $pendingStmt->execute();
+                $pendingCmd = $pendingStmt->fetch(PDO::FETCH_ASSOC);
+
+                if ($pendingCmd && $devId > 0) {
+                    // ผูกรายการคำสั่งนี้เข้ากับอุปกรณ์ที่กำลัง poll ทันที
+                    $updRec = $pdo->prepare("UPDATE cd_records SET device_id = ? WHERE id = ?");
+                    $updRec->execute([$devId, $pendingCmd['record_id']]);
+                    $cmd = $pendingCmd;
+                }
+            }
 
             if ($cmd) {
                 $code = strtoupper(trim($cmd['activity_code']));

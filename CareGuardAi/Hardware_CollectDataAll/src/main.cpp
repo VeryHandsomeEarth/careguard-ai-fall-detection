@@ -543,27 +543,30 @@ void updateSteps() {
 
 // ==================== ตั้งค่าปุ่มกด D18 ====================
 void setupButton() {
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  Serial.println("[Button] ตั้งค่าปุ่มยืนยันการช่วยเหลือที่ขา D18 (INPUT_PULLUP) สำเร็จ");
+  pinMode(BUTTON_PIN, INPUT_PULLUP); // Active LOW: ดึงตัวต้านทาน Pull-up ภายใน (ปกติ HIGH / กดปุ่มต่อลง GND เป็น LOW)
+  Serial.println("[Button] ตั้งค่าปุ่มยืนยันการช่วยเหลือที่ขา D18 (INPUT_PULLUP / Active LOW: ตรวจจับสถานะ LOW) สำเร็จ");
 }
 
 void handleButton() {
   int reading = digitalRead(BUTTON_PIN);
   if (reading != lastButtonState) {
     lastDebounceTime = millis();
+    lastButtonState = reading;
   }
-  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY) {
+
+  if ((millis() - lastDebounceTime) >= 30) { // หน่วงเวลา Debounce 30ms เพื่อความเสถียรและตอบสนองฉับไว
     if (reading == LOW && currentButtonState == HIGH) {
+      currentButtonState = LOW; // ตรวจจับสถานะกดปุ่ม (Active LOW)
       onButtonPressed();
+    } else if (reading == HIGH && currentButtonState == LOW) {
+      currentButtonState = HIGH; // ปล่อยปุ่มแล้ว คืนสู่สถานะปกติ (HIGH)
     }
-    currentButtonState = reading;
   }
-  lastButtonState = reading;
 }
 
 void onButtonPressed() {
   Serial.println("\n========================================================");
-  Serial.println("🔘 [Button D18] ตรวจพบการกดปุ่ม: ยืนยันการช่วยเหลือการล้มแล้ว!");
+  Serial.println("🔘 [Button D18] ตรวจพบการกดปุ่ม (สถานะ LOW): ยืนยันการช่วยเหลือการล้มแล้ว!");
   Serial.println("========================================================");
 
   if (isAlarming) {

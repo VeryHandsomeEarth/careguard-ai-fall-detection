@@ -143,8 +143,14 @@ foreach ($allRecords as $r) {
     $grouped[$key]['records'][] = $r;
 }
 
-// ดึงอุปกรณ์ที่ลงทะเบียนไว้
-$devices = $pdo->query("SELECT * FROM cd_devices ORDER BY name")->fetchAll();
+// ดึงอุปกรณ์ที่ลงทะเบียนไว้ (และหาอุปกรณ์ล่าสุดที่ใช้งาน)
+$devices = $pdo->query("SELECT * FROM cd_devices ORDER BY id DESC")->fetchAll();
+$lastDevIdStmt = $pdo->prepare("SELECT device_id FROM cd_records WHERE subject_id = ? ORDER BY id DESC LIMIT 1");
+$lastDevIdStmt->execute([$id]);
+$defaultDeviceId = intval($lastDevIdStmt->fetchColumn());
+if ($defaultDeviceId <= 0 && !empty($devices)) {
+    $defaultDeviceId = intval($devices[0]['id']);
+}
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -482,7 +488,7 @@ $devices = $pdo->query("SELECT * FROM cd_devices ORDER BY name")->fetchAll();
                             <option value="" disabled>— ยังไม่มีอุปกรณ์ กรุณาเพิ่มที่เมนูอุปกรณ์ก่อน —</option>
                         <?php endif; ?>
                         <?php foreach ($devices as $d): ?>
-                            <option value="<?= $d['id'] ?>"><?= htmlspecialchars($d['name']) ?> (<?= htmlspecialchars($d['mac_address']) ?>)</option>
+                            <option value="<?= $d['id'] ?>" <?= ($d['id'] == $defaultDeviceId) ? 'selected' : '' ?>><?= htmlspecialchars($d['name']) ?> (<?= htmlspecialchars($d['mac_address']) ?>)</option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -779,6 +785,8 @@ $devices = $pdo->query("SELECT * FROM cd_devices ORDER BY name")->fetchAll();
             });
 
             const pollTimer = setInterval(async () => {
+                // หยุดชั่วคราวหากผู้ใช้สลับไปแท็บอื่น เพื่อลด Request ขึ้นเซิร์ฟเวอร์
+                if (document.hidden) return;
                 try {
                     let url = 'api/actions.php?action=check_recording_status&subject_id=<?= (int)$id ?>';
                     if (finalizeTargetId > 0) {
@@ -835,7 +843,7 @@ $devices = $pdo->query("SELECT * FROM cd_devices ORDER BY name")->fetchAll();
                 } catch (err) {
                     console.warn('Polling error:', err);
                 }
-            }, 1500);
+            }, 5000); // Poll every 5.0s แบบสุภาพ (Gentle) ป้องกันโดนแบน 100%
         })();
 
         // ลบทั้งกลุ่มท่าทาง

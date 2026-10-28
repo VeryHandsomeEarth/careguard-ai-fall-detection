@@ -32,6 +32,10 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 #include <WiFiManager.h>
+#include <WiFiClientSecure.h>
+#include <esp_wifi.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
@@ -60,8 +64,8 @@ Adafruit_MPU6050 mpu;
 // ==================== การตั้งค่า Sampling & Streaming Batch ====================
 
 const int SAMPLE_RATE_MS = 20;      // 50Hz (ทุก 20ms)
-const int BATCH_SIZE = 50;          // 50 จุดต่อ Batch (1 วินาที)
-const int POOL_SIZE = 6;            // จำนวนบัฟเฟอร์ใน Free Pool (6 x 1.4KB = ~8.5KB RAM)
+const int BATCH_SIZE = 500;         // 500 จุดต่อ Batch -> 1 รอบทดสอบส่งเพียง 1 ครั้งเดียว (Gentle Request)
+const int POOL_SIZE = 2;            // 2 x 14KB = ~28KB RAM (ป้องกันเซิร์ฟเวอร์แบน 100%)
 
 // Auto-Impact Thresholds สำหรับท่าล้ม (Fall Mode)
 const int PRE_EVENT_SAMPLES = 50;   // 1 วินาทีก่อนกระแทก (50 จุด)
@@ -115,7 +119,8 @@ static int preCount = 0;
 
 enum SystemMode {
   MODE_IDLE,
-  MODE_COUNTDOWN,
+  MODE_WAIT_ADL_BUTTON,     // ได้รับคำสั่ง ADL จากเว็บ -> ส่งเสียงเตือน & รอกดปุ่ม D18
+  MODE_COUNTDOWN,           // นับถอยหลัง 3... 2... 1... เริ่ม!
   MODE_WAIT_FALL_IMPACT,    // รอตรวจจับการล้ม (เก็บ Circular Buffer 50 จุด 1s ก่อนกระแทก)
   MODE_RECORDING_POST_FALL, // เก็บ 50 จุด (1s) หลังกระแทก รวมเป็น 100 จุด (2.0s)
   MODE_RECORDING_ADL,       // ยืน 1s (beep) -> ทำท่า 8s (beep) -> ยืน 1s (finish tone) รวม 500 จุด (10.0s)
@@ -179,7 +184,6 @@ float calcGyroMagnitudeDps(const SensorSample &sample);
 bool shouldTriggerAutoFall(float aMagG, float gyroDps, unsigned long now,
                            unsigned long lastLowGTime, unsigned long lastHighGyroTime);
 
-void playRaceCountdown();
 void playFinishAlert();
 void playSuccessMelody();
 void beepTone(int duration_ms, int pause_ms);
@@ -199,6 +203,9 @@ float round2(float val);
 // ==================== SETUP ====================
 
 void setup() {
+  // ปิด Brownout Detector ป้องกันบอร์ด CD2 รีเซ็ตหรือตัด Wi-Fi เมื่อไฟ 3.3V ดรอปชั่วขณะตอนส่งข้อมูล
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
   Serial.begin(115200);
   delay(800);
 
@@ -209,6 +216,10 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
 
   pinMode(BUTTON_PIN, INPUT_PULLDOWN); // ปุ่ม D18 กดบันทึก ADL (Active HIGH)
+
+  // เสียงเปิดเครื่อง (Boot Tones) ยืนยันว่าฮาร์ดแวร์และลำโพงพร้อมทำงาน
+  beepTone(80, 60);
+  beepTone(120, 60);
 
   Serial.println("\n==================================================================");
   Serial.println("  CollectData_Hardware — Dual-Core FreeRTOS Sensor Logger");
@@ -245,7 +256,7 @@ void setup() {
   xTaskCreatePinnedToCore(
       networkUploadTask,
       "NetworkUploadTask",
-      8192,
+      16384,
       NULL,
       1,
       &networkTaskHandle,
@@ -278,10 +289,14 @@ void sensorCollectTask(void *pvParameters) {
   unsigned long lastLowGTime = 0;
   unsigned long lastHighGyroTime = 0;
   unsigned long waitFallStartTime = 0;
+  unsigned long countdownStartTime = 0;
+  int countdownStep = -1;
 
   // สำหรับปุ่มกด D18 (Active HIGH: ปกติ 0V / กดแล้วเป็น 3.3V HIGH)
-  int lastButtonState = LOW;
+  int lastRawBtnState = LOW;
+  int stableButtonState = LOW;
   unsigned long lastButtonDebounce = 0;
+  unsigned long waitAdlStartTime = 0;
 
   for (;;) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -296,31 +311,76 @@ void sensorCollectTask(void *pvParameters) {
         currentBatchIndex = 0;
         adlSampleCount = 0;
         postFallSampleCount = 0;
-        currentMode = MODE_COUNTDOWN;
-      }
 
-      // ตรวจสอบการกดปุ่ม D18 บนบอร์ดเพื่อเริ่มบันทึก ADL 10 วินาที (Active HIGH)
-      int btnVal = digitalRead(BUTTON_PIN);
-      if (btnVal != lastButtonState) {
-        lastButtonDebounce = now;
-      }
-      if ((now - lastButtonDebounce) > 50) {
-        if (btnVal == HIGH && lastButtonState == LOW) {
-          Serial.println("\n[ปุ่ม D18] 🔘 ตรวจพบการกดปุ่ม D18 (Active HIGH) -> เริ่มรอบ ADL 10 วินาที!");
-          memset(&currentCmd, 0, sizeof(RecordCommand));
-          currentCmd.record_id = activeRecordId; // 0 หรือ ID ที่รออยู่
-          strncpy(currentCmd.category, "adl", sizeof(currentCmd.category) - 1);
-          strncpy(currentCmd.activity_code, "D01", sizeof(currentCmd.activity_code) - 1);
-          strncpy(currentCmd.activity_name, "ADL (D18 Trigger)", sizeof(currentCmd.activity_name) - 1);
-          currentCmd.duration_sec = 10;
-          currentCmd.target_samples = 500;
-          currentCmd.is_fall = false;
-          adlSampleCount = 0;
-          postFallSampleCount = 0;
+        if (currentCmd.is_fall) {
+          // ท่าล้ม: เริ่มนับถอยหลัง 3 2 1 ทันทีตามข้อกำหนด
+          Serial.printf("\n[Core 1] 🚨 ได้รับคำสั่งท่าล้ม (Record #%d - %s) -> เริ่มนับถอยหลัง 3 2 1 ทันที\n",
+                        activeRecordId, currentCmd.activity_code);
+          countdownStartTime = now;
+          countdownStep = -1;
           currentMode = MODE_COUNTDOWN;
+        } else {
+          // ท่า ADL: เข้าสู่โหมดรอกดปุ่ม D18 เพื่อให้ผู้ทดสอบพร้อม
+          waitAdlStartTime = now;
+          currentMode = MODE_WAIT_ADL_BUTTON;
+          Serial.println("\n==================================================================");
+          Serial.printf("  [Core 1] 📥 ได้รับคำสั่ง ADL (Record #%d - %s : %s)\n",
+                        activeRecordId, currentCmd.activity_code, currentCmd.activity_name);
+          Serial.println("  👉 ผู้ทดสอบกรุณาเข้าประจำที่ในท่ายืนเตรียมตัว");
+          Serial.println("  🔘 เมื่อพร้อมแล้ว ให้กดปุ่ม D18 เพื่อเริ่มนับถอยหลังและบันทึก 10 วินาที");
+          Serial.println("==================================================================");
+
+          // ส่งสัญญาณเสียงเตือน 2 ปี๊บแจ้งให้รู้ว่าได้รับคำสั่งเรียบร้อยแล้ว
+          beepTone(100, 80);
+          beepTone(180, 50);
         }
       }
-      lastButtonState = btnVal;
+    }
+
+    // 2. ตรวจจับการกดปุ่ม D18 แบบ Debounce ที่เสถียร (Active HIGH: ปกติ 0V / กดแล้วเป็น 3.3V)
+    int rawBtn = digitalRead(BUTTON_PIN);
+    if (rawBtn != lastRawBtnState) {
+      lastButtonDebounce = now;
+      lastRawBtnState = rawBtn;
+    }
+
+    bool buttonJustPressed = false;
+    if ((now - lastButtonDebounce) >= 40) {
+      if (rawBtn != stableButtonState) {
+        stableButtonState = rawBtn;
+        if (stableButtonState == HIGH) { // กดปุ่ม (Rising Edge: LOW -> HIGH)
+          buttonJustPressed = true;
+        }
+      }
+    }
+
+    if (buttonJustPressed) {
+      if (currentMode == MODE_WAIT_ADL_BUTTON) {
+        Serial.printf("\n[ปุ่ม D18] 🔘 ตรวจพบการกดปุ่ม D18 (Active HIGH) -> เริ่มรอบ ADL 10 วินาที! (Record #%d - %s)\n",
+                      activeRecordId, currentCmd.activity_code);
+        beepTone(80, 50); // เสียงปี๊บตอบสนองการกดทันที
+        countdownStartTime = millis();
+        countdownStep = -1;
+        currentMode = MODE_COUNTDOWN;
+      } else if (currentMode == MODE_IDLE) {
+        Serial.println("\n[ปุ่ม D18] 🔘 ตรวจพบการกดปุ่ม D18 (Active HIGH)");
+        beepTone(80, 50); // เสียงปี๊บตอบสนองทันที
+        if (activeRecordId > 0 && !currentCmd.is_fall) {
+          Serial.printf("           เริ่มรอบ ADL ที่รออยู่ทันที (Record #%d - %s)\n",
+                        activeRecordId, currentCmd.activity_code);
+          countdownStartTime = millis();
+          countdownStep = -1;
+          currentMode = MODE_COUNTDOWN;
+        } else {
+          Serial.println("           ปุ่ม D18 และลำโพงทำงานได้ปกติ (พร้อมรับคำสั่งจากหน้าเว็บ)");
+        }
+      }
+    }
+
+    // หมดเวลารอการกดปุ่ม D18 (120 วินาที) -> คืนสู่โหมด IDLE
+    if (currentMode == MODE_WAIT_ADL_BUTTON && (now - waitAdlStartTime > 120000)) {
+      Serial.println("\n[Core 1] ⚠️ หมดเวลารอกดปุ่ม D18 (120 วินาที) -> ยกเลิกและกลับสู่โหมดพร้อม");
+      currentMode = MODE_IDLE;
     }
 
     switch (currentMode) {
@@ -340,48 +400,84 @@ void sensorCollectTask(void *pvParameters) {
       }
 
       // ----------------------------------------------------------------------
-      // MODE_COUNTDOWN: ส่งสัญญาณเสียง 3... 2... 1... GO!
+      // MODE_WAIT_ADL_BUTTON: รอกดปุ่ม D18 (อ่าน MPU6050 เตรียมพร้อม)
       // ----------------------------------------------------------------------
-      case MODE_COUNTDOWN: {
-        if (currentCmd.is_fall) {
-          Serial.printf("\n[Core 1] 🚨 เริ่มโหมดตรวจจับการล้ม (Record #%d - %s) -> นับถอยหลัง 3 2 1...\n",
-                        activeRecordId, currentCmd.activity_code);
-        } else {
-          Serial.printf("\n[Core 1] ⏱️ เริ่มโหมด ADL 10 วินาที (Record #%d - %s) -> นับถอยหลัง 3 2 1...\n",
-                        activeRecordId, currentCmd.activity_code);
-        }
-
-        playRaceCountdown();
-        digitalWrite(LED_PIN, HIGH);
-
-        if (currentCmd.is_fall) {
-          // เตรียมพร้อมรอการล้ม (เคลียร์ตัวนับบัฟเฟอร์ก่อนล้ม)
-          preCount = 0;
-          preWriteIndex = 0;
-          waitFallStartTime = millis();
-          currentMode = MODE_WAIT_FALL_IMPACT;
-          Serial.println("[Core 1] 🛡️ เข้าสู่โหมดตรวจจับแรงกระแทก (เตรียมตัวล้มลงเบาะ)...");
-        } else {
-          // เริ่มรอบ ADL 10 วินาที (เริ่มที่ท่ายืนเตรียมตัวนิ่งๆ 1 วินาที)
-          adlSampleCount = 0;
-          currentBatchIndex = 0;
-          activePacket = getFreePacket();
-          if (activePacket) {
-            activePacket->record_id = activeRecordId;
-            activePacket->batch_index = currentBatchIndex;
-            activePacket->sample_count = 0;
-            activePacket->is_final = false;
-          }
-          currentMode = MODE_RECORDING_ADL;
-          Serial.println("[Core 1] 🧍 สเต็ปที่ 1: ยืนเตรียมตัวนิ่งๆ 1 วินาที...");
-        }
-
-        xLastWakeTime = xTaskGetTickCount();
+      case MODE_WAIT_ADL_BUTTON: {
+        SensorSample s = readMPUSample((long)now);
+        storePreSample(s);
         break;
       }
 
       // ----------------------------------------------------------------------
-      // MODE_WAIT_FALL_IMPACT: รอแรงกระแทกการล้ม (เก็บ Circular Pre-buffer 50 จุด)
+      // MODE_COUNTDOWN: นับถอยหลัง 3... 2... 1... GO! พร้อมอ่านข้อมูล 50Hz ตลอดเวลา
+      // ----------------------------------------------------------------------
+      case MODE_COUNTDOWN: {
+        SensorSample s = readMPUSample((long)now);
+        storePreSample(s);
+
+        float aMagG = calcAMagG(s);
+        float gyroDps = calcGyroMagnitudeDps(s);
+        if (aMagG <= LOW_G_THRESHOLD) lastLowGTime = now;
+        if (gyroDps >= GYRO_THRESHOLD_DPS) lastHighGyroTime = now;
+
+        unsigned long elapsed = now - countdownStartTime;
+
+        if (elapsed < 1000) {
+          if (countdownStep != 3) {
+            countdownStep = 3;
+            Serial.printf("\n[Core 1] 📢 นับถอยหลัง 3... (Record #%d - %s)\n",
+                          activeRecordId, currentCmd.activity_code);
+          }
+          bool on = (elapsed < 180);
+          digitalWrite(BUZZER_PIN, on ? HIGH : LOW);
+          digitalWrite(LED_PIN, on ? HIGH : LOW);
+        } else if (elapsed < 2000) {
+          if (countdownStep != 2) {
+            countdownStep = 2;
+            Serial.println("[Core 1] 📢 นับถอยหลัง 2...");
+          }
+          bool on = ((elapsed - 1000) < 180);
+          digitalWrite(BUZZER_PIN, on ? HIGH : LOW);
+          digitalWrite(LED_PIN, on ? HIGH : LOW);
+        } else if (elapsed < 3000) {
+          if (countdownStep != 1) {
+            countdownStep = 1;
+            Serial.println("[Core 1] 📢 นับถอยหลัง 1...");
+          }
+          bool on = ((elapsed - 2000) < 180);
+          digitalWrite(BUZZER_PIN, on ? HIGH : LOW);
+          digitalWrite(LED_PIN, on ? HIGH : LOW);
+        } else {
+          // ครบ 3.0 วินาที: ส่งเสียง GO! ยาว 650ms แบบ Non-blocking และเริ่มระบบทันที!
+          Serial.println("[Core 1] 🚀 GO! เริ่มต้นทันที! (เปิดตรวจจับแรงกระแทก/บันทึก)");
+          startBeepAsync(650);
+          digitalWrite(LED_PIN, HIGH);
+
+          if (currentCmd.is_fall) {
+            // ไม่เคลียร์ preCount! บัฟเฟอร์ 50 จุดก่อนหน้าบรรจุข้อมูลท่ายืน 1.0 วินาทีล่าสุดพร้อมแล้ว
+            waitFallStartTime = millis();
+            currentMode = MODE_WAIT_FALL_IMPACT;
+            Serial.println("[Core 1] 🛡️ เข้าสู่โหมดตรวจจับแรงกระแทก (เตรียมตัวล้มลงเบาะ)...");
+          } else {
+            // เริ่มรอบ ADL 10 วินาที (สเต็ปยืนเตรียมตัว 1 วินาทีแรก)
+            adlSampleCount = 0;
+            currentBatchIndex = 0;
+            activePacket = getFreePacket();
+            if (activePacket) {
+              activePacket->record_id = activeRecordId;
+              activePacket->batch_index = currentBatchIndex;
+              activePacket->sample_count = 0;
+              activePacket->is_final = false;
+            }
+            currentMode = MODE_RECORDING_ADL;
+            Serial.println("[Core 1] 🧍 สเต็ปที่ 1: ยืนเตรียมตัวนิ่งๆ 1 วินาที...");
+          }
+        }
+        break;
+      }
+
+      // ----------------------------------------------------------------------
+      // MODE_WAIT_FALL_IMPACT: รอแรงกระแทกการล้ม (สกัด 50 จุดก่อนล้ม + 50 จุดหลังล้ม = 100 จุด)
       // ----------------------------------------------------------------------
       case MODE_WAIT_FALL_IMPACT: {
         SensorSample s = readMPUSample((long)now);
@@ -399,34 +495,36 @@ void sensorCollectTask(void *pvParameters) {
           Serial.printf("\n[Core 1] 💥 ตรวจพบแรงกระแทก %.2fG! สกัดข้อมูล 1s ก่อนล้ม (50 จุด) + บันทึกต่อ 1s หลังล้ม (50 จุด)\n",
                         aMagG);
 
-          // ส่งแพ็กเก็ต 1: ข้อมูล 50 จุดก่อนการล้ม (1 วินาที)
-          BatchPacket *prePkt = getFreePacket();
-          if (prePkt) {
-            prePkt->record_id = activeRecordId;
-            prePkt->batch_index = 0;
-            prePkt->sample_count = 0;
-            prePkt->is_final = false;
-
-            int startIdx = (preWriteIndex - preCount + PRE_EVENT_SAMPLES) % PRE_EVENT_SAMPLES;
-            for (int i = 0; i < preCount; i++) {
-              SensorSample ps = preBuffer[(startIdx + i) % PRE_EVENT_SAMPLES];
-              ps.timestamp_ms = i * SAMPLE_RATE_MS; // 0, 20, 40, ... 980 ms
-              prePkt->samples[prePkt->sample_count++] = ps;
-            }
-
-            if (xQueueSend(batchUploadQueue, &prePkt, 0) != pdTRUE) {
-              spoolBatchToSpiffs(prePkt);
-              releasePacket(prePkt);
-            }
-          }
-
-          // เตรียมแพ็กเก็ต 2: สำหรับเก็บข้อมูล 50 จุดหลังการล้ม (1 วินาที)
+          // บันทึกรวมข้อมูล 50 จุดก่อนล้ม + 50 จุดหลังล้ม ลงใน 1 แพ็กเก็ตเดียว (100 จุด = 1 HTTP POST)
           activePacket = getFreePacket();
           if (activePacket) {
             activePacket->record_id = activeRecordId;
-            activePacket->batch_index = 1;
+            activePacket->batch_index = 0;
             activePacket->sample_count = 0;
             activePacket->is_final = false;
+
+            // ดึงข้อมูล 50 จุด (1.0 วินาที) ก่อนเกิดแรงกระแทกจาก Circular Buffer
+            // รับประกันว่า activePacket จะได้ข้อมูลก่อนล้มครบ 50 จุดแน่นอน 100%
+            int availablePre = (preCount > PRE_EVENT_SAMPLES) ? PRE_EVENT_SAMPLES : preCount;
+            int padCount = PRE_EVENT_SAMPLES - availablePre;
+
+            // กรณีมีข้อมูลก่อนล้มไม่ถึง 50 จุด ให้เติมตัวอย่างแรกสุดซ้ำเพื่อรับประกันว่าครบ 50 จุดเสมอ
+            if (padCount > 0) {
+              int oldestIdx = (preCount > 0) ? ((preWriteIndex - preCount + PRE_EVENT_SAMPLES) % PRE_EVENT_SAMPLES) : 0;
+              SensorSample padSample = (preCount > 0) ? preBuffer[oldestIdx] : s;
+              for (int i = 0; i < padCount; i++) {
+                SensorSample ps = padSample;
+                ps.timestamp_ms = i * SAMPLE_RATE_MS;
+                activePacket->samples[activePacket->sample_count++] = ps;
+              }
+            }
+
+            int startIdx = (preWriteIndex - availablePre + PRE_EVENT_SAMPLES) % PRE_EVENT_SAMPLES;
+            for (int i = 0; i < availablePre; i++) {
+              SensorSample ps = preBuffer[(startIdx + i) % PRE_EVENT_SAMPLES];
+              ps.timestamp_ms = (padCount + i) * SAMPLE_RATE_MS; // 0, 20, 40, ... 980 ms
+              activePacket->samples[activePacket->sample_count++] = ps;
+            }
           }
 
           postFallSampleCount = 0;
@@ -454,11 +552,6 @@ void sensorCollectTask(void *pvParameters) {
 
           if (postFallSampleCount >= POST_EVENT_SAMPLES) {
             activePacket->is_final = true; // จบครบ 100 จุด (2.0s)
-            if (xQueueSend(batchUploadQueue, &activePacket, 0) != pdTRUE) {
-              spoolBatchToSpiffs(activePacket);
-              releasePacket(activePacket);
-            }
-            activePacket = NULL;
             Serial.println("[Core 1] ✔ บันทึกท่าล้มครบถ้วน 100 จุดข้อมูล (2.0 วินาที)");
             currentMode = MODE_FINISHING;
           }
@@ -499,26 +592,23 @@ void sensorCollectTask(void *pvParameters) {
             Serial.println("  [Core 1] 📢 ลำโพงดัง Beep! -> สเต็ปที่ 3: กลับมาท่ายืนนิ่งๆ (1 วินาที)...");
           }
 
-          // เมื่อเก็บครบ 50 จุด (1 วินาที) -> ส่งสตรีมขึ้น Core 0
+          // เมื่อเก็บครบ 500 จุด (10 วินาที) -> ไปโหมดส่งเสียงจบก่อนแล้วค่อยส่งขึ้น Core 0
           if (activePacket->sample_count >= BATCH_SIZE) {
             bool isLastBatch = (adlSampleCount >= 500) || stopContinuousRequested;
             if (isLastBatch) {
               activePacket->is_final = true;
-            }
-
-            if (xQueueSend(batchUploadQueue, &activePacket, 0) == pdTRUE) {
-              activePacket = NULL;
-              currentBatchIndex++;
-            } else {
-              spoolBatchToSpiffs(activePacket);
-              releasePacket(activePacket);
-              activePacket = NULL;
-              currentBatchIndex++;
-            }
-
-            if (isLastBatch) {
               Serial.println("[Core 1] ✔ บันทึกรอบ ADL ครบถ้วน 500 จุดข้อมูล (10.0 วินาที)");
               currentMode = MODE_FINISHING;
+            } else {
+              if (xQueueSend(batchUploadQueue, &activePacket, 0) == pdTRUE) {
+                activePacket = NULL;
+                currentBatchIndex++;
+              } else {
+                spoolBatchToSpiffs(activePacket);
+                releasePacket(activePacket);
+                activePacket = NULL;
+                currentBatchIndex++;
+              }
             }
           }
         }
@@ -530,9 +620,15 @@ void sensorCollectTask(void *pvParameters) {
       }
 
       // ----------------------------------------------------------------------
-      // MODE_FINISHING: ส่งเสียงแจ้งเตือนเสร็จสิ้น และกลับสู่สถานะพร้อม
+      // MODE_FINISHING: ส่งเสียงแจ้งเตือนเสร็จสิ้นให้จบก่อน แล้วจึงส่งข้อมูลผ่าน Wi-Fi
       // ----------------------------------------------------------------------
       case MODE_FINISHING: {
+        digitalWrite(LED_PIN, LOW);
+        Serial.println("[Core 1] 🏁 บันทึกเสร็จสิ้นสมบูรณ์! -> ส่งสัญญาณเสียงแจ้งเตือนเสร็จสิ้น...");
+        // ส่งเสียงลำโพงให้เสร็จก่อนเริ่มส่ง Wi-Fi เพื่อไม่ให้ดึงกระแสไฟ 3.3V พร้อมกันจนไฟตก/เน็ตหลุด!
+        playFinishAlert();
+        vTaskDelay(pdMS_TO_TICKS(150)); // พักให้ระดับแรงดันไฟนิ่งสนิทหลังลำโพงดับ
+
         if (activePacket && activePacket->sample_count > 0) {
           activePacket->is_final = true;
           if (xQueueSend(batchUploadQueue, &activePacket, 0) != pdTRUE) {
@@ -541,10 +637,6 @@ void sensorCollectTask(void *pvParameters) {
           }
           activePacket = NULL;
         }
-
-        digitalWrite(LED_PIN, LOW);
-        Serial.println("[Core 1] 🏁 บันทึกเสร็จสิ้นสมบูรณ์! -> ส่งสัญญาณเสียงแจ้งเตือนเสร็จสิ้น...");
-        playFinishAlert();
 
         activeRecordId = 0;
         currentMode = MODE_IDLE;
@@ -562,20 +654,43 @@ void sensorCollectTask(void *pvParameters) {
 
 void networkUploadTask(void *pvParameters) {
   unsigned long lastPollTime = 0;
-  unsigned long lastWiFiCheck = 0;
+  unsigned long disconnectedSince = 0;
   unsigned long lastSpiffsSync = 0;
 
   for (;;) {
     unsigned long now = millis();
 
-    // 1. รับ Batch จาก Core 1 แล้วยิง HTTP POST ขึ้นเว็บทันที
+    // 1. รับ Batch จาก Core 1 แล้วยิง HTTP POST ขึ้นเว็บทันที (พร้อมระบบรอ Wi-Fi & Retry 3 รอบ)
     BatchPacket *pkt = NULL;
     if (xQueueReceive(batchUploadQueue, &pkt, 0) == pdTRUE && pkt != NULL) {
       bool stopFromWeb = false;
       bool sentOk = false;
 
-      if (WiFi.status() == WL_CONNECTED) {
-        sentOk = uploadBatchToServer(pkt, stopFromWeb);
+      // หาก Wi-Fi สะดุดชั่วคราวขณะผู้ทดสอบเคลื่อนไหวร่างกาย ให้กระตุ้น esp_wifi_connect() และรอสูงสุด 12 วินาที
+      // (esp_wifi_connect() จะต่อใหม่เฉพาะเมื่อหลุดอยู่เท่านั้น ไม่ไปตัดการเชื่อมต่อที่กำลังดำเนินการอยู่)
+      for (int w = 0; w < 24 && WiFi.status() != WL_CONNECTED; w++) {
+        if (w % 6 == 0) {
+          Serial.println("[Core 0] ⏳ รอสัญญาณ Wi-Fi เชื่อมต่อกลับก่อนส่งข้อมูล...");
+          esp_wifi_connect();
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+      }
+
+      // ส่งข้อมูลขึ้นเซิร์ฟเวอร์ (ลองซ้ำสูงสุด 3 ครั้งหากเน็ตสะดุด)
+      for (int attempt = 1; attempt <= 3 && !sentOk; attempt++) {
+        if (WiFi.status() != WL_CONNECTED) {
+          esp_wifi_connect();
+          for (int w = 0; w < 10 && WiFi.status() != WL_CONNECTED; w++) {
+            vTaskDelay(pdMS_TO_TICKS(500));
+          }
+        }
+        if (WiFi.status() == WL_CONNECTED) {
+          sentOk = uploadBatchToServer(pkt, stopFromWeb);
+        }
+        if (!sentOk && attempt < 3) {
+          Serial.printf("[Core 0] 🔄 ส่งข้อมูลรอบที่ %d ไม่สำเร็จ -> รอ 2 วินาทีแล้วลองใหม่...\n", attempt);
+          vTaskDelay(pdMS_TO_TICKS(2000));
+        }
       }
 
       if (stopFromWeb) {
@@ -584,27 +699,31 @@ void networkUploadTask(void *pvParameters) {
       }
 
       if (!sentOk) {
-        Serial.printf("[Core 0] ⚠️ ส่ง Batch #%d ล้มเหลว -> สำรองลง SPIFFS Flash\n", pkt->batch_index);
+        Serial.printf("[Core 0] ⚠️ ส่ง Batch #%d ล้มเหลวหลังลอง 3 ครั้ง -> สำรองลง SPIFFS Flash\n", pkt->batch_index);
         spoolBatchToSpiffs(pkt);
       } else if (pkt->is_final) {
         playSuccessMelody();
       }
 
       releasePacket(pkt);
+      vTaskDelay(pdMS_TO_TICKS(2000)); // พัก 2 วินาทีหลังส่งข้อมูล เพื่อให้เซิร์ฟเวอร์ประมวลผลเสร็จสมบูรณ์
+      lastPollTime = millis();         // เว้นระยะก่อนเริ่มถามคำสั่งถัดไป
     }
 
-    // 2. ซิงค์ข้อมูลที่ค้างอยู่ใน Flash เมื่อเน็ตพร้อม
-    if (WiFi.status() == WL_CONNECTED && now - lastSpiffsSync >= 4000) {
+    // 2. ซิงค์ข้อมูลที่ค้างอยู่ใน Flash เมื่อเน็ตพร้อมและอยู่ในโหมดว่าง (เว้นระยะ 25 วินาที)
+    if (currentMode == MODE_IDLE && WiFi.status() == WL_CONNECTED && now - lastSpiffsSync >= 25000) {
       lastSpiffsSync = now;
       if (countSpiffsBatches() > 0) {
         syncSpiffsBatches();
       }
     }
 
-    // 3. ถามคำสั่งเริ่มบันทึกจากหน้าเว็บทุก 1.5 วินาที (เฉพาะเมื่อ Core 1 ว่าง)
+    // 3. ถามคำสั่งเริ่มบันทึกจากหน้าเว็บแบบอ่อนโยน (ทุก 6.0 - 8.5 วินาที + Jitter ป้องกัน IP Ban)
+    static unsigned long nextPollInterval = 7000;
     if (currentMode == MODE_IDLE && WiFi.status() == WL_CONNECTED &&
-        (now - lastPollTime >= 1500)) {
+        (now - lastPollTime >= nextPollInterval)) {
       lastPollTime = now;
+      nextPollInterval = 6000 + random(0, 2500);
       RecordCommand cmd;
       if (pollServerCommand(cmd)) {
         Serial.printf("[Core 0] 📥 ได้รับคำสั่งใหม่: Record #%d | รหัส: %s | โหมด: %s (%d วินาที, %d จุด)\n",
@@ -615,65 +734,180 @@ void networkUploadTask(void *pvParameters) {
       }
     }
 
-    // 4. ตรวจสอบการเชื่อมต่อ Wi-Fi ทุก 15 วินาที
-    if (now - lastWiFiCheck >= 15000) {
-      lastWiFiCheck = now;
-      if (WiFi.status() != WL_CONNECTED) {
-        WiFi.reconnect();
+    // 4. ตรวจสอบ Wi-Fi ทุก 5 วินาทีด้วย esp_wifi_connect()
+    // ข้อดีของ esp_wifi_connect(): ถ้ากำลังเชื่อมค้างอยู่จะไม่ไปสั่ง disconnect ซ้ำ แต่ถ้าหลุดนิ่งอยู่จะสั่งเกาะ AP ทันที!
+    if (WiFi.status() == WL_CONNECTED) {
+      disconnectedSince = 0;
+    } else {
+      if (disconnectedSince == 0) {
+        disconnectedSince = now;
+      } else if (now - disconnectedSince >= 5000) {
+        disconnectedSince = now;
+        Serial.println("[WiFi] 🔄 กระตุ้นการเชื่อมต่อ Wi-Fi (esp_wifi_connect)...");
+        esp_wifi_connect();
       }
     }
 
     // 5. ไฟสถานะ & คำสั่ง Serial
     if (currentMode == MODE_IDLE && !isBuzzerBusy && asyncBuzzerOffTime == 0) {
       handleWiFiIndicator(now);
+    } else if (currentMode == MODE_WAIT_ADL_BUTTON) {
+      static unsigned long lastWaitBlink = 0;
+      if (now - lastWaitBlink >= 200) {
+        lastWaitBlink = now;
+        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+      }
     }
     handleSerialCommands();
 
-    vTaskDelay(pdMS_TO_TICKS(15));
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
 
 // ============================================================================
-// การส่งข้อมูลขึ้นเซิร์ฟเวอร์ & สปูล SPIFFS Flash
+// การส่งข้อมูลขึ้นเซิร์ฟเวอร์แบบ Zero-Heap Chunked Stream & สปูล SPIFFS Flash
 // ============================================================================
+
+// คลาส Stream สร้าง JSON แบบ On-the-Fly ทีละชิ้นเล็กๆ (ใช้ Heap 0 bytes!)
+// แก้ปัญหาการจอง String 36KB และการส่งก้อนใหญ่รวดเดียวที่ทำให้ Wi-Fi หลุดตอนจบ ADL
+class BatchJsonStream : public Stream {
+private:
+  const BatchPacket *_pkt;
+  String _header;
+  int _sampleIdx;
+  char _sampleBuf[112];
+  size_t _sampleBufLen;
+  size_t _sampleBufPos;
+  size_t _headerPos;
+  bool _footerDone;
+  size_t _totalLen;
+  size_t _bytesSent;
+
+  void formatSample(int idx) {
+    const SensorSample &s = _pkt->samples[idx];
+    _sampleBufLen = snprintf(
+        _sampleBuf, sizeof(_sampleBuf),
+        "%s{\"t\":%ld,\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,\"gx\":%.2f,\"gy\":%.2f,\"gz\":%.2f}",
+        (idx > 0) ? "," : "",
+        s.timestamp_ms,
+        round2(s.accel_x), round2(s.accel_y), round2(s.accel_z),
+        round2(s.gyro_x), round2(s.gyro_y), round2(s.gyro_z));
+    _sampleBufPos = 0;
+  }
+
+public:
+  BatchJsonStream(const BatchPacket *pkt, const String &mac) : _pkt(pkt) {
+    _header = "{\"mac_address\":\"" + mac + "\"";
+    if (_pkt->record_id > 0) {
+      _header += ",\"record_id\":" + String(_pkt->record_id);
+    }
+    if (_pkt->is_final) {
+      _header += ",\"is_final\":true";
+    }
+    _header += ",\"data\":[";
+
+    _totalLen = _header.length() + 2; // +2 สำหรับ "]}"
+    for (int i = 0; i < _pkt->sample_count; i++) {
+      formatSample(i);
+      _totalLen += _sampleBufLen;
+    }
+
+    _headerPos = 0;
+    _sampleIdx = 0;
+    _sampleBufLen = 0;
+    _sampleBufPos = 0;
+    _footerDone = false;
+    _bytesSent = 0;
+    if (_pkt->sample_count > 0) {
+      formatSample(0);
+    }
+  }
+
+  size_t totalLength() const { return _totalLen; }
+
+  virtual int available() override {
+    if (_bytesSent >= _totalLen) return 0;
+    size_t rem = _totalLen - _bytesSent;
+    return (rem > 1024) ? 1024 : (int)rem;
+  }
+
+  virtual int read() override {
+    char c;
+    if (readBytes(&c, 1) == 1) return (unsigned char)c;
+    return -1;
+  }
+
+  virtual int peek() override { return -1; }
+  virtual void flush() override {}
+  virtual size_t write(uint8_t) override { return 0; }
+
+  virtual size_t readBytes(char *buffer, size_t length) override {
+    if (length > 1024) length = 1024;
+    size_t written = 0;
+
+    while (_headerPos < _header.length() && written < length) {
+      buffer[written++] = _header[_headerPos++];
+      _bytesSent++;
+    }
+
+    while (_sampleIdx < _pkt->sample_count && written < length) {
+      while (_sampleBufPos < _sampleBufLen && written < length) {
+        buffer[written++] = _sampleBuf[_sampleBufPos++];
+        _bytesSent++;
+      }
+      if (_sampleBufPos >= _sampleBufLen) {
+        _sampleIdx++;
+        if (_sampleIdx < _pkt->sample_count) {
+          formatSample(_sampleIdx);
+        }
+      }
+    }
+
+    const char *footer = "]}";
+    while (_sampleIdx >= _pkt->sample_count && !_footerDone && written < length) {
+      size_t footerIdx = _bytesSent - (_totalLen - 2);
+      if (footerIdx < 2) {
+        buffer[written++] = footer[footerIdx];
+        _bytesSent++;
+      }
+      if (_bytesSent >= _totalLen) {
+        _footerDone = true;
+      }
+    }
+
+    // พัก 2ms ต่อทุกๆ 1KB เพื่อให้ Wi-Fi Driver ส่งแพ็กเก็ตออกไปได้ทัน ไม่กินไฟกระชาก
+    vTaskDelay(pdMS_TO_TICKS(2));
+    return written;
+  }
+};
 
 bool uploadBatchToServer(BatchPacket *pkt, bool &outStopRequested) {
   outStopRequested = false;
   if (!pkt || pkt->sample_count <= 0) return true;
+  if (WiFi.status() != WL_CONNECTED) return false;
 
-  DynamicJsonDocument doc(pkt->sample_count * 130 + 350);
-  doc["mac_address"] = MAC_ADDRESS;
-  if (pkt->record_id > 0) {
-    doc["record_id"] = pkt->record_id;
-  }
-  if (pkt->is_final) {
-    doc["is_final"] = true;
-  }
+  BatchJsonStream jsonStream(pkt, MAC_ADDRESS);
+  Serial.printf("[Core 0] 📤 กำลังสตรีมข้อมูล Record #%d จำนวน %d จุด (ขนาด %u bytes | Free Heap: %u bytes)...\n",
+                pkt->record_id, pkt->sample_count, jsonStream.totalLength(), ESP.getFreeHeap());
 
-  JsonArray dataArr = doc.createNestedArray("data");
-  for (int i = 0; i < pkt->sample_count; i++) {
-    JsonObject obj = dataArr.createNestedObject();
-    obj["t"] = pkt->samples[i].timestamp_ms;
-    obj["ax"] = round2(pkt->samples[i].accel_x);
-    obj["ay"] = round2(pkt->samples[i].accel_y);
-    obj["az"] = round2(pkt->samples[i].accel_z);
-    obj["gx"] = round2(pkt->samples[i].gyro_x);
-    obj["gy"] = round2(pkt->samples[i].gyro_y);
-    obj["gz"] = round2(pkt->samples[i].gyro_z);
-  }
-
-  String jsonPayload;
-  serializeJson(doc, jsonPayload);
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(15);
 
   HTTPClient http;
-  http.begin(RECEIVE_DATA_URL);
+  http.begin(client, RECEIVE_DATA_URL);
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(4500);
+  http.addHeader("User-Agent", "ESP32-IMU-Client/2.0");
+  http.addHeader("Connection", "close");
+  http.setTimeout(15000);
 
-  int httpCode = http.POST(jsonPayload);
+  int httpCode = http.sendRequest("POST", &jsonStream, jsonStream.totalLength());
   if (httpCode == HTTP_CODE_OK) {
     String resp = http.getString();
     http.end();
+    client.stop();
+
+    Serial.printf("[Core 0] ✅ ส่งข้อมูลสำเร็จครบ %d จุด! ตอบกลับ: %s\n", pkt->sample_count, resp.c_str());
 
     DynamicJsonDocument respDoc(512);
     deserializeJson(respDoc, resp);
@@ -682,7 +916,9 @@ bool uploadBatchToServer(BatchPacket *pkt, bool &outStopRequested) {
     }
     return true;
   } else {
+    Serial.printf("[Core 0] ❌ ส่งข้อมูลไม่สำเร็จ (HTTP Code: %d)\n", httpCode);
     http.end();
+    client.stop();
     return false;
   }
 }
@@ -719,32 +955,51 @@ void syncSpiffsBatches() {
     File f = SPIFFS.open(p, FILE_READ);
     if (!f) continue;
 
-    BatchPacket pkt;
-    if (f.read((uint8_t*)&pkt, sizeof(BatchPacket)) == sizeof(BatchPacket)) {
+    // ใช้ Memory Pool แทนการสร้างตัวแปร BatchPacket (14KB) บน Stack
+    // ป้องกันอาการ Guru Meditation Error: Core 0 panic'ed (Double exception) 100%!
+    BatchPacket *pkt = getFreePacket();
+    if (!pkt) {
       f.close();
+      return;
+    }
+
+    size_t readBytes = f.read((uint8_t*)pkt, sizeof(BatchPacket));
+    f.close();
+
+    if (readBytes == sizeof(BatchPacket) && pkt->sample_count > 0 && pkt->sample_count <= BATCH_SIZE) {
       bool dummyStop = false;
-      if (uploadBatchToServer(&pkt, dummyStop)) {
+      if (uploadBatchToServer(pkt, dummyStop)) {
         SPIFFS.remove(p);
       }
     } else {
-      f.close();
       SPIFFS.remove(p);
     }
+
+    releasePacket(pkt);
     break;
   }
 }
 
 bool pollServerCommand(RecordCommand &outCmd) {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(4);
+
   HTTPClient http;
   String url = String(CHECK_CMD_URL) + "?action=check_command&mac=" + MAC_ADDRESS;
 
-  http.begin(url);
-  http.setTimeout(3500);
+  http.begin(client, url);
+  http.addHeader("User-Agent", "ESP32-IMU-Client/2.0");
+  http.addHeader("Connection", "close");
+  http.setTimeout(4000);
   int httpCode = http.GET();
 
   if (httpCode == HTTP_CODE_OK) {
     String payload = http.getString();
     http.end();
+    client.stop();
 
     DynamicJsonDocument doc(1024);
     DeserializationError err = deserializeJson(doc, payload);
@@ -762,6 +1017,7 @@ bool pollServerCommand(RecordCommand &outCmd) {
     }
   } else {
     http.end();
+    client.stop();
   }
   return false;
 }
@@ -842,14 +1098,6 @@ void checkAsyncBuzzer() {
   }
 }
 
-void playRaceCountdown() {
-  Serial.println("[Countdown] 3 - 2 - 1 - GO!");
-  beepTone(180, 820);
-  beepTone(180, 820);
-  beepTone(180, 820);
-  beepTone(650, 50);
-}
-
 void playFinishAlert() {
   beepTone(200, 120);
   beepTone(200, 120);
@@ -867,6 +1115,20 @@ void playSuccessMelody() {
 
 void setupSPIFFS() {
   if (SPIFFS.begin(true)) {
+    // ล้างไฟล์ Batch เก่าที่ขนาดโครงสร้างไม่ตรงกับเวอร์ชันปัจจุบันทิ้งอัตโนมัติ
+    for (int i = 0; i < 20; i++) {
+      String p = "/batch_" + String(i) + ".bin";
+      if (SPIFFS.exists(p)) {
+        File f = SPIFFS.open(p, FILE_READ);
+        if (f) {
+          size_t sz = f.size();
+          f.close();
+          if (sz != sizeof(BatchPacket)) {
+            SPIFFS.remove(p);
+          }
+        }
+      }
+    }
     Serial.printf("[SPIFFS] เริ่มต้นสำเร็จ (ใช้ไป: %u / %u bytes)\n",
                   SPIFFS.usedBytes(), SPIFFS.totalBytes());
   }
@@ -888,11 +1150,45 @@ void setupMPU6050() {
 
 void setupWiFi() {
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);                 // ปิด Wi-Fi Modem Sleep 100% ป้องกันหลุดการเชื่อมต่อจากเราเตอร์
+  WiFi.setAutoReconnect(true);          // เปิด Auto Reconnect ในระดับ Driver
+  WiFi.persistent(true);
+  WiFi.setTxPower(WIFI_POWER_17dBm);  // ใช้ 17dBm เพื่อไม่ให้ภาคจ่ายไฟ 3.3V ของบอร์ด CD2 วูบตอนส่งข้อมูล
+
+  // ลงทะเบียนตรวจจับเหตุการณ์ Wi-Fi (ใช้ esp_wifi_connect() ซึ่งไม่สั่ง disconnect ซ้ำซ้อน)
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    switch (event) {
+      case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+        Serial.println("[WiFi] 📶 เชื่อมต่อกับ Access Point สำเร็จ");
+        break;
+      case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+        Serial.printf("[WiFi] 🌐 ได้รับ IP: %s | RSSI: %d dBm\n",
+                      WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        break;
+      case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+        Serial.printf("[WiFi] ⚠️ Wi-Fi สะดุดชั่วคราว (Reason Code: %d) -> กำลังเชื่อมต่อกลับอัตโนมัติ...\n",
+                      info.wifi_sta_disconnected.reason);
+        esp_wifi_connect();
+        break;
+      default:
+        break;
+    }
+  });
+
   WiFiManager wm;
   wm.setConfigPortalTimeout(180);
   if (wm.autoConnect(AP_SSID, AP_PASSWORD)) {
-    Serial.printf("[WiFi] เชื่อมต่อสำเร็จ: %s (IP: %s)\n",
-                  WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+    WiFi.setSleep(false);                 // ยืนยันปิด Sleep ซ้ำอีกครั้ง
+    WiFi.setAutoReconnect(true);          // ยืนยัน Auto Reconnect
+    WiFi.setTxPower(WIFI_POWER_17dBm);    // ยืนยันกำลังส่ง 17dBm หลังผ่าน WiFiManager
+    Serial.printf("[WiFi] เชื่อมต่อสำเร็จ: %s (IP: %s | RSSI: %d dBm)\n",
+                  WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    // เสียงเมื่อต่อ Wi-Fi สำเร็จ (Melody 3 ขั้น)
+    beepTone(90, 50);
+    beepTone(130, 50);
+    beepTone(180, 70);
+  } else {
+    Serial.println("[WiFi] ⚠️ หมดเวลารอตั้งค่า Wi-Fi Captive Portal (เข้าสู่โหมด Offline)");
   }
 }
 
@@ -917,10 +1213,18 @@ void handleSerialCommands() {
   if (cmd == "stop") {
     Serial.println("[Serial] สั่งหยุดบันทึกทันที!");
     stopContinuousRequested = true;
+  } else if (cmd == "wifi-reset") {
+    Serial.println("[WiFi] 🔄 ล้างค่า Wi-Fi และรีสตาร์ทเพื่อเปิด Captive Portal ใหม่...");
+    WiFi.disconnect(true, true);
+    delay(1000);
+    ESP.restart();
   } else if (cmd == "status" || cmd == "s") {
     Serial.println("\n================ SYSTEM STATUS ================");
     Serial.printf("MAC Address   : %s\n", MAC_ADDRESS.c_str());
-    Serial.printf("WiFi Status   : %s\n", WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED");
+    Serial.printf("WiFi Status   : %s (%s, IP: %s, RSSI: %d dBm)\n",
+                  WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED",
+                  WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    Serial.printf("Free Heap     : %d bytes (Min: %d bytes)\n", ESP.getFreeHeap(), ESP.getMinFreeHeap());
     Serial.printf("Mode          : %d\n", (int)currentMode);
     Serial.printf("SPIFFS Batches: %d\n", countSpiffsBatches());
     Serial.println("===============================================\n");
